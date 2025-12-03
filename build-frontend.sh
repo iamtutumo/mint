@@ -9,8 +9,19 @@ NC='\033[0m' # No Color
 
 # Get the root directory of the project
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FRONTEND_DIR="$ROOT_DIR/services/pwa"
-DIST_DIR="$FRONTEND_DIR/dist"
+
+# ============================================
+# IMPORTANT: This script now builds both Next.js frontend apps:
+# 1. Realtime Transcriber (frontend/realtime-transcriber)
+# 2. Voice Agent (frontend/voice-agent)
+# 
+# These will be served on:
+# - Realtime Transcriber: http://localhost:3001
+# - Voice Agent: http://localhost:3002
+# 
+# Use with Docker Compose:
+#   docker compose -f docker-compose.yml -f docker-compose.frontend.yml up -d
+# ============================================
 
 # Function to check if a command exists
 command_exists() {
@@ -85,10 +96,10 @@ for pkg in "${REQUIRED_GLOBAL_PKGS[@]}"; do
     fi
 done
 
-# Check frontend directory
+# Ensure frontend directory exists
 if [ ! -d "$FRONTEND_DIR" ]; then
-    echo -e "${RED}Error: Frontend directory not found at $FRONTEND_DIR${NC}"
-    exit 1
+    echo -e "${YELLOW}Creating PWA directory at $FRONTEND_DIR...${NC}"
+    mkdir -p "$FRONTEND_DIR"
 fi
 
 # Function to build the PWA application
@@ -107,10 +118,20 @@ build_pwa() {
     
     # Initialize project if package.json doesn't exist
     if [ ! -f "package.json" ]; then
+        if [ "$(ls -A "$FRONTEND_DIR" 2>/dev/null)" ]; then
+            echo -e "${YELLOW}Directory is not empty. Cleaning existing contents...${NC}"
+            cd "$ROOT_DIR" && rm -rf "$FRONTEND_DIR" && mkdir -p "$FRONTEND_DIR" && cd "$FRONTEND_DIR" || {
+                echo -e "${RED}Error resetting PWA directory${NC}"
+                return 1
+            }
+        fi
         echo -e "${YELLOW}Initializing new React project...${NC}"
         npx create-react-app . --template typescript || {
-            echo -e "${RED}Error creating React app${NC}"
-            return 1
+            echo -e "${YELLOW}create-react-app failed, trying Vite (react-ts)...${NC}"
+            npm create vite@latest . -- --template react-ts || {
+                echo -e "${RED}Error creating frontend project${NC}"
+                return 1
+            }
         }
     fi
     
@@ -154,7 +175,9 @@ EOL
     # Ensure the dist directory exists and is properly set up for Nginx
     echo -e "${YELLOW}Preparing distribution files...${NC}"
     mkdir -p "$DIST_DIR"
-    cp -r build/* "$DIST_DIR/"
+    SRC_DIR="build"
+    if [ -d "dist" ]; then SRC_DIR="dist"; fi
+    cp -r "$SRC_DIR"/* "$DIST_DIR/"
     
     # Create Nginx configuration
     echo -e "${YELLOW}Creating Nginx configuration...${NC}"

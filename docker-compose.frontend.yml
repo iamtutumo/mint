@@ -1,0 +1,64 @@
+version: '3.9'
+
+services:
+  # Realtime Transcriber - Next.js App
+  realtime-transcriber:
+    build:
+      context: ./frontend/realtime-transcriber
+      dockerfile: Dockerfile.prod
+    container_name: realtime-transcriber
+    ports:
+      - "3001:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  # Voice Agent - Next.js App
+  voice-agent:
+    build:
+      context: ./frontend/voice-agent
+      dockerfile: Dockerfile
+    container_name: voice-agent
+    ports:
+      - "3002:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  # Update gateway dependencies to include Next.js apps
+  gateway:
+    depends_on:
+      - realtime-transcriber
+      - voice-agent
+      - auth-service
+      - documents-service
+      - ocr-service
+      - asr-service
+      - tts-service
+      - voice-service
+      - docgen-service
+      - docsign-service
+      - rules-service
+      - pwa
+      - llm-engine
+      - elevenlabs-service
+      - stt-service
+
+  # Update PWA to not use port 3000 (Now on 3000 reserved, apps on 3001/3002)
+  pwa:
+    ports:
+      - "3003:80"  # Changed from 3000:80 to avoid conflict

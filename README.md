@@ -30,9 +30,21 @@ A comprehensive AI platform with multiple microservices for document processing,
    ```
 
 4. **Access the application**
-   - Web UI: http://localhost:3000
-   - API Gateway: http://localhost:80
-   - MinIO Console: http://localhost:9001
+   - **Realtime Transcriber**: http://localhost:3001
+   - **Voice Agent**: http://localhost:3002
+   - **PWA**: http://localhost:3003
+   - **API Gateway**: http://localhost:80
+   - **MinIO Console**: http://localhost:9001
+
+## Frontend Applications
+
+This project includes **3 separate frontend applications**:
+
+1. **Realtime Transcriber** (http://localhost:3001) - Real-time speech-to-text with language selection
+2. **Voice Agent** (http://localhost:3002) - Voice-based conversational AI agent
+3. **PWA** (http://localhost:3003) - Progressive Web App with multiple features
+
+For detailed frontend setup and deployment instructions, see [FRONTEND_SETUP.md](./FRONTEND_SETUP.md).
 
 ## Service Endpoints
 

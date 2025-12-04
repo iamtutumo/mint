@@ -1,3639 +1,5162 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# ALL-IN-ONE: AI Platform Superstack — CLEAN, CONSISTENT, REFACTORED (Block 1/...)
+#
+# Purpose:
+# - A single big bash script that scaffolds a multi-service AI microservice stack,
+#   builds minimal service files, creates a cleaned docker-compose, and provides
+#   an interactive management menu.
+#
+# - This script is intentionally modular: it generates the project layout,
+#   .env, docker-compose.yml (clean, deduped), lightweight service skeletons
+#   (STT, Documents, Auth, LLM, Rules, ElevenLabs-like WS), and Dockerfiles.
+#
+# How you'll use it:
+# 1) Paste Block 1 (this file) into a new file `all-in-one.sh` in an empty dir.
+# 2) Make executable: chmod +x all-in-one.sh
+# 3) Run: ./all-in-one.sh
+#
+# This file is the first block (lines 1..500). It creates the scaffolding and
+# the first set of service skeletons. Subsequent blocks will add more services,
+# advanced configs, and full implementations. Each block continues the same
+# script and appends additional files. Keep pasting subsequent blocks in order.
+#
+# NOTE:
+# - The generated services are safe "developer skeletons" — they run and expose
+#   health endpoints. Heavy dependencies (Torch, transformers) are optional and
+#   can be toggled in requirements to avoid long builds on dev machines.
+# - If you want a lighter dev run, remove heavy deps from requirements files.
+# ==============================================================================
 
-#!/bin/bash
+set -euo pipefail
+IFS=$'\n\t'
 
-# =============================================
-# AI Platform Superstack Setup Script
-# Combines all microservices into a single deployment
-# =============================================
-
-# Exit on error and print commands
-set -eo pipefail
-
-# Colors for output
+# -------- Colors and formatting ----------
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+BLUE='\033[0;34m'
+MAG='\033[0;35m'
+NC='\033[0m'
 
-# Project root directory
+# -------- Project root ----------
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+echo -e "${BLUE}Project root:${NC} $ROOT_DIR"
 
-# Create required directories
-create_directories() {
-    echo -e "${YELLOW}Creating project structure...${NC}"
-    
-    # Main service directories
-    mkdir -p "$ROOT_DIR/services/auth"
-    mkdir -p "$ROOT_DIR/services/documents/{templates,output}"
-    mkdir -p "$ROOT_DIR/services/ocr"
-    mkdir -p "$ROOT_DIR/services/asr"
-    mkdir -p "$ROOT_DIR/services/tts"
-    mkdir -p "$ROOT_DIR/services/voice_streaming/recordings"
-    mkdir -p "$ROOT_DIR/services/docgen/templates"
-    mkdir -p "$ROOT_DIR/services/docsign/flows"
-    mkdir -p "$ROOT_DIR/services/rules"
-    mkdir -p "$ROOT_DIR/services/llm-engine/models"
-    mkdir -p "$ROOT_DIR/services/elevenlabs-service"
-    mkdir -p "$ROOT_DIR/services/gateway/conf.d"
-    mkdir -p "$ROOT_DIR/services/pwa/dist"
-    mkdir -p "$ROOT_DIR/services/stt"  # Add STT service directory
-
-    # Create log directories
-    mkdir -p "$ROOT_DIR/logs/caddy"
-    mkdir -p "$ROOT_DIR/logs/auth"
-    mkdir -p "$ROOT_DIR/logs/documents"
-    mkdir -p "$ROOT_DIR/logs/ocr"
-    mkdir -p "$ROOT_DIR/logs/asr"
-    mkdir -p "$ROOT_DIR/logs/tts"
-    mkdir -p "$ROOT_DIR/logs/voice_streaming"
-    mkdir -p "$ROOT_DIR/logs/docgen"
-    mkdir -p "$ROOT_DIR/logs/docsign"
-    mkdir -p "$ROOT_DIR/logs/rules"
-    mkdir -p "$ROOT_DIR/logs/llm-engine"
-    mkdir -p "$ROOT_DIR/logs/elevenlabs-service"
-    mkdir -p "$ROOT_DIR/logs/stt"
-
-    # Create data directories for databases and storage
-    mkdir -p "$ROOT_DIR/data/postgres"
-    mkdir -p "$ROOT_DIR/data/redis"
-    mkdir -p "$ROOT_DIR/data/minio"
-    mkdir -p "$ROOT_DIR/data/weaviate"
-    mkdir -p "$ROOT_DIR/data/ollama"
-
-    echo -e "${GREEN}✓ Project structure created${NC}"
+# -------- Utility: safe write (creates file only if changed) ----------
+_safe_write() {
+    # $1 = path, stdin = content
+    local path="$1"
+    local tmp
+    tmp="$(mktemp)"
+    cat - >"$tmp"
+    if [ -f "$path" ]; then
+        if cmp -s "$tmp" "$path"; then
+            rm -f "$tmp"
+            return 0
+        fi
+    fi
+    mv "$tmp" "$path"
+    chmod 644 "$path"
+    echo -e "${GREEN}WROTE:${NC} $path"
 }
 
-# Create environment files
+# -------- Create directories ----------
+create_directories() {
+    echo -e "${YELLOW}Creating directory structure...${NC}"
+    mkdir -p "$ROOT_DIR/services"/{auth,stt,tts,asr,ocr,documents,docgen,docsign,voice_streaming,elevenlabs-service,llm-engine,rules,gateway,pwa}
+    mkdir -p "$ROOT_DIR/logs"/{caddy,auth,stt,documents,elevenlabs}
+    mkdir -p "$ROOT_DIR/data"/{minio,postgres,redis,weaviate,ollama}
+    mkdir -p "$ROOT_DIR/volumes"
+    mkdir -p "$ROOT_DIR/services/documents"/{templates,output}
+    mkdir -p "$ROOT_DIR/services/stt/models"
+    echo -e "${GREEN}✓ Directories created${NC}"
+}
+
+# -------- Create .env and .env.example ----------
 create_env_files() {
-    echo -e "${YELLOW}Creating environment files...${NC}"
-    
-    # Create .env file if it doesn't exist
+    echo -e "${YELLOW}Creating .env and .env.example...${NC}"
     if [ ! -f "$ROOT_DIR/.env" ]; then
-        echo -e "${YELLOW}Creating .env file...${NC}"
-        cp "$ROOT_DIR/.env.example" "$ROOT_DIR/.env" 2>/dev/null || {
-            # If .env.example doesn't exist, create a basic .env
-            cat > "$ROOT_DIR/.env" << 'EOT'
-# ============================================
-# AI Platform Superstack - Environment Variables
-# ============================================
-
-# ===== Authentication =====
-JWT_SECRET=$(openssl rand -hex 32)
-MAGIC_LINK_EXPIRY=900
-OTP_EXPIRY=300
-
-# ===== Database & Cache =====
+        _safe_write "$ROOT_DIR/.env" <<'EOT'
+# ========================
+# Environment (copy and edit)
+# ========================
+# Databases
 POSTGRES_USER=ai_user
-POSTGRES_PASSWORD=$(openssl rand -base64 16 | tr -dc 'a-zA-Z0-9' | head -c 24)
+POSTGRES_PASSWORD=ChangeMePostgres123!
 POSTGRES_DB=ai_platform
-DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-REDIS_URL=redis://redis:6379
+POSTGRES_PORT=5432
+POSTGRES_HOST=postgres
 
-# ===== MinIO Storage =====
+# Redis
+REDIS_HOST=redis
+REDIS_PORT=6379
+
+# MinIO
 MINIO_ROOT_USER=minioadmin
-MINIO_ROOT_PASSWORD=ChangeThisMinioPassword123!
-MINIO_ACCESS_KEY=$(openssl rand -hex 16)
-MINIO_SECRET_KEY=$(openssl rand -base64 32)
+MINIO_ROOT_PASSWORD=minioadmin
 MINIO_BUCKET=documents
 
-# ===== Email Configuration =====
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=your.email@example.com
-SMTP_PASS=your_app_specific_password
-SMTP_FROM=noreply@yourdomain.com
-SMTP_SECURE=true
-
-# ===== AI Services =====
+# Ollama
 OLLAMA_URL=http://ollama:11434
-OLLAMA_MODEL=qwen:4b
-STT_MODEL=base
-STT_LANGUAGE=en
-STT_DEVICE=cpu
-TTS_PROVIDER=coqui
-TTS_VOICE=tts_models/en/ljspeech/vits
-TTS_MODEL=vits
-LLM_PROVIDER=ollama
-LLM_MODEL=qwen:4b
-LLM_TEMPERATURE=0.7
-LLM_MAX_TOKENS=2048
 
-# ===== Service URLs =====
-AUTH_SERVICE_URL=http://auth-service:8001
-DOCUMENTS_SERVICE_URL=http://documents-service:8008
-OCR_SERVICE_URL=http://ocr-service:8001
-ASR_SERVICE_URL=http://asr-service:8002
-TTS_SERVICE_URL=http://tts-service:8003
-VOICE_SERVICE_URL=http://voice-service:8004
-DOCGEN_SERVICE_URL=http://docgen-service:8005
-DOCSIGN_SERVICE_URL=http://docsign-service:8006
-RULES_SERVICE_URL=http://rules-service:8007
-LLM_SERVICE_URL=http://llm-engine:8080
-ELEVENLABS_SERVICE_URL=http://elevenlabs-service:3000
+# STT / TTS models
+STT_MODEL=openai/whisper-tiny
+MODEL_CACHE=/root/.cache/models
 
-# ===== Environment =====
+# General
 NODE_ENV=development
 LOG_LEVEL=info
-CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001
 EOT
-        }
-        echo -e "${GREEN}✓ .env file created${NC}"
     else
-        echo -e "${GREEN}✓ .env file already exists, using existing configuration${NC}"
+        echo -e "${GREEN}Using existing .env${NC}"
     fi
 
-    # Create .env.example if it doesn't exist
     if [ ! -f "$ROOT_DIR/.env.example" ]; then
-        echo -e "${YELLOW}Creating .env.example file...${NC}"
-        grep -v -E '^(#|$|POSTGRES_PASSWORD=|JWT_SECRET=|MINIO_ACCESS_KEY=|MINIO_SECRET_KEY=|SMTP_PASS=)' "$ROOT_DIR/.env" > "$ROOT_DIR/.env.example"
-        echo -e "${GREEN}✓ .env.example file created${NC}"
-    fi
-
-    # Source the .env file
-    if [ -f "$ROOT_DIR/.env" ]; then
-        set -a
-        source "$ROOT_DIR/.env"
-        set +a
-        echo -e "${GREEN}✓ Environment variables loaded${NC}"
-    else
-        echo -e "${RED}Error: Failed to load .env file${NC}"
-        return 1
+        _safe_write "$ROOT_DIR/.env.example" <<'EOT'
+# Copy this to .env and edit values for your environment.
+# Example:
+# MINIO_ROOT_PASSWORD=supersecret
+EOT
     fi
 }
 
-# Create docker-compose file
+# -------- Create cleaned docker-compose --------
 create_docker_compose() {
-    echo -e "${YELLOW}Creating docker-compose.yml...${NC}"
-    cat > "$ROOT_DIR/docker-compose.yml" << 'EOT'
+    echo -e "${YELLOW}Generating docker-compose.yml...${NC}"
+    _safe_write "$ROOT_DIR/docker-compose.yml" <<'YAML'
 version: '3.9'
 services:
-  gateway:
-    build: ./services/gateway
-    container_name: gateway
-    ports: ["80:80", "443:443"]
-    volumes:
-      - ./logs/caddy:/var/log/caddy
-      - caddy_data:/data
-      - caddy_config:/config
-    environment:
-      - ACME_AGREE=true
-      - CADDY_DOMAIN=localhost
-      - CADDY_EMAIL=etu.moses@gmail.com
-    depends_on:
-      - auth-service
-      - documents-service
-      - ocr-service
-      - asr-service
-      - tts-service
-      - voice-service
-      - docgen-service
-      - docsign-service
-      - rules-service
-      - pwa
-      - llm-engine
-      - elevenlabs-service
-      - stt-service
-
-  pwa:
-    build: ./services/pwa
-    container_name: pwa
-    ports: ["3000:80"]
-    volumes:
-      - ./services/pwa/dist:/usr/share/nginx/html
-      - ./logs/pwa:/var/log/nginx
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "http://localhost:80"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  auth-service:
-    build: ./services/auth
-    environment:
-      - DATABASE_URL=${DATABASE_URL}
-      - REDIS_URL=${REDIS_URL}
-      - JWT_SECRET=${JWT_SECRET}
-      - MAGIC_LINK_EXPIRY=${MAGIC_LINK_EXPIRY}
-      - OTP_EXPIRY=${OTP_EXPIRY}
-    depends_on:
-      - postgres
-      - redis
-
-  documents-service:
-    build: ./services/documents
-    ports:
-      - "8008:8000"
-    volumes:
-      - ./services/documents/templates:/app/templates
-      - ./services/documents/output:/app/output
-    environment:
-      - PYTHONUNBUFFERED=1
-      - DOCUMENTS_MINIO_ENABLED=true
-      - DOCUMENTS_MINIO_ENDPOINT=minio:9000
-      - DOCUMENTS_MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
-      - DOCUMENTS_MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
-      - DOCUMENTS_MINIO_BUCKET=${MINIO_BUCKET}
-    depends_on:
-      - minio
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  minio:
-    image: minio/minio:RELEASE.2023-10-07T15-07-38Z
-    container_name: minio
-    ports:
-      - "9000:9000"  # API port
-      - "9001:9001"  # Console port
-    volumes:
-      - ./data/minio:/data
-      - ./logs/minio:/root/.minio/logs
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-      MINIO_DOMAIN: minio.local
-    command: server /data --console-address ":9001"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
-
-  ocr-service:
-    build: ./services/ocr
-    ports: ["8001:8000"]
-
-  asr-service:
-    build: ./services/asr
-    ports: ["8002:8000"]
-
-  tts-service:
-    build: ./services/tts
-    ports: ["8003:8000"]
-
-  voice-service:
-    build: ./services/voice_streaming
-    ports: ["8004:8000"]
-    environment:
-      - OLLAMA_URL=http://ollama:11434
-      - OLLAMA_MODEL=llama3
-
-  docgen-service:
-    build: ./services/docgen
-    ports: ["8005:8000"]
-    volumes:
-      - ./services/docgen/templates:/app/templates
-
-  docsign-service:
-    build: ./services/docsign
-    ports: ["8006:8000"]
-    volumes:
-      - ./services/docsign/flows:/app/flows
-
-  llm-engine:
-    build:
-      context: ./services/llm-engine
-    container_name: llm-engine
-    ports:
-      - "8009:8000"
-    environment:
-      - PYTHONUNBUFFERED=1
-      - OLLAMA_BASE_URL=http://ollama:11434
-    depends_on:
-      - postgres
-      - redis
-      - ollama
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    restart: unless-stopped
-    volumes:
-      - llm_models:/root/.ollama
-
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - llm_models:/root/.ollama
-    restart: unless-stopped
-
-  elevenlabs-service:
-    build:
-      context: ./services/elevenlabs-service
-    container_name: elevenlabs-service
-    ports:
-      - "8010:8000"
-    environment:
-      - PYTHONUNBUFFERED=1
-    depends_on:
-      - stt-service
-      - tts-service
-      - llm-engine
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    restart: unless-stopped
-
-  docgen:
-    build:
-      context: ./services/docgen
-    container_name: docgen
-    ports:
-      - "8005:8000"
-    environment:
-      - PYTHONUNBUFFERED=1
-    depends_on:
-      - postgres
-      - redis
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  rules-service:
-    build: ./services/rules
-    container_name: rules_engine_service
-    ports: ["8007:8000"]
-    environment:
-      - PYTHONUNBUFFERED=1
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    restart: unless-stopped
-
-  scalar:
-    image: scalar/scalar:latest
-    container_name: scalar
-    ports: ["8089:8080"]
-    environment:
-      - SCALAR_API_SPEC=/openapi.yaml
-    volumes:
-      - ./openapi.yaml:/openapi.yaml
-
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama
-    ports: ["11434:11434"]
-    volumes:
-      - ollama_models:/root/.ollama
-
-  weaviate:
-    image: semitechnologies/weaviate:1.21.2
-    container_name: weaviate
-    ports: ["8081:8080"]
-    environment:
-      - QUERY_DEFAULTS_LIMIT=20
-      - AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=true
-      - PERSISTENCE_DATA_PATH="/var/lib/weaviate"
-      - DEFAULT_VECTORIZER_MODULE="none"
-      - CLUSTER_HOSTNAME=node1
-    volumes:
-      - ./data/weaviate:/var/lib/weaviate
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/v1/.well-known/ready"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      - AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=true
-
-  evolution-api:
-    image: evolutionapi/evolution-api:latest
-    container_name: evolution-api
-    ports: ["8080:8080"]
-    environment:
-      - WHATSAPP_API_KEY=${WHATSAPP_API_KEY}
-
+  # -----------------------
+  # Supporting infrastructure
+  # -----------------------
   postgres:
     image: postgres:15-alpine
     container_name: postgres
     environment:
-      - POSTGRES_USER=authuser
-      - POSTGRES_PASSWORD=authpass123
-      - POSTGRES_DB=authdb
+      POSTGRES_USER: ${POSTGRES_USER:-ai_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ChangeMePostgres123!}
+      POSTGRES_DB:   ${POSTGRES_DB:-ai_platform}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports: ["5432:5432"]
+      - ./data/postgres:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ai_user} || exit 1"]
+      interval: 10s
+      retries: 5
 
   redis:
-    image: redis:alpine
+    image: redis:7-alpine
     container_name: redis
-    ports: ["6379:6379"]
-
-  postgres_n8n:
-    image: postgres:15-alpine
-    container_name: postgres_n8n
-    environment:
-      - POSTGRES_USER=n8n
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=n8n
+    ports:
+      - "6379:6379"
     volumes:
-      - postgres_data_n8n:/var/lib/postgresql/data
+      - ./data/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      retries: 5
 
-  n8n:
-    image: n8nio/n8n:latest
-    container_name: n8n
-    ports: ["5678:5678"]
+  minio:
+    image: minio/minio:latest
+    container_name: minio
     environment:
-      - DB_TYPE=postgresdb
-      - DB_POSTGRESDB_HOST=postgres_n8n
-      - DB_POSTGRESDB_PORT=5432
-      - DB_POSTGRESDB_DATABASE=n8n
-      - DB_POSTGRESDB_USER=n8n
-      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
-    depends_on: [postgres_n8n]
-
-  chatwoot:
-    image: chatwoot/chatwoot:latest
-    container_name: chatwoot
-    ports: ["3000:3000"]
-    environment:
-      - REDIS_URL=redis://redis:6379
-    depends_on: [postgres, redis]
-
-  portainer:
-    image: portainer/portainer-ce:latest
-    container_name: portainer
-    ports: ["9000:9000"]
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    command: server /data --console-address ":9001"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - portainer_data:/data
+      - ./data/minio:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9000/minio/health/live || exit 1"]
+      interval: 20s
+      retries: 5
 
-  # STT Service
+  # -----------------------
+  # Core microservices (skeletal)
+  # -----------------------
   stt-service:
     build:
       context: ./services/stt
       dockerfile: Dockerfile
     container_name: stt-service
-    ports: ["8011:8000"]
+    ports:
+      - "8011:8000"
     environment:
-      - PYTHONUNBUFFERED=1
-      - MODEL_PATH=/app/models
+      - MODEL_PATH=${MODEL_CACHE:-/root/.cache/models}
+      - STT_MODEL=${STT_MODEL:-openai/whisper-tiny}
     volumes:
-      - stt_models:/root/.cache/whisper
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      - ./services/stt/models:${MODEL_CACHE:-/root/.cache/models}
+    depends_on:
+      - redis
+
+  documents-service:
+    build:
+      context: ./services/documents
+      dockerfile: Dockerfile
+    container_name: documents-service
+    ports:
+      - "8008:8000"
+    volumes:
+      - ./services/documents/templates:/app/templates:ro
+      - ./services/documents/output:/app/output
+    environment:
+      - DOCUMENTS_MINIO_ENDPOINT=minio:9000
+      - DOCUMENTS_MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
+      - DOCUMENTS_MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
+    depends_on:
+      - minio
+
+  auth-service:
+    build:
+      context: ./services/auth
+      dockerfile: Dockerfile
+    container_name: auth-service
+    ports:
+      - "8001:8000"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-ai_user}:${POSTGRES_PASSWORD:-pass}@postgres:5432/${POSTGRES_DB:-ai_platform}
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+
+  llm-engine:
+    build:
+      context: ./services/llm-engine
+      dockerfile: Dockerfile
+    container_name: llm-engine
+    ports:
+      - "8009:8000"
+    environment:
+      - OLLAMA_BASE_URL=${OLLAMA_URL:-http://ollama:11434}
+    depends_on:
+      - postgres
+      - redis
+
+  elevenlabs-service:
+    build:
+      context: ./services/elevenlabs-service
+      dockerfile: Dockerfile
+    container_name: elevenlabs-service
+    ports:
+      - "8010:8000"
+    depends_on:
+      - stt-service
+      - llm-engine
+      - documents-service
+
+  # -----------------------
+  # Optional / heavy services (commented out initially)
+  # -----------------------
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: ollama
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - ./data/ollama:/root/.ollama
 
 volumes:
-  postgres_data:
-  redis_data:
-  ollama_models:
-  minio_data:
-  postgres_data_n8n:
-  portainer_data:
+  # add per-service volumes here if needed
   stt_models:
-EOT
+YAML
+    echo -e "${GREEN}✓ docker-compose.yml generated${NC}"
 }
 
-# Create service files
+# -------- Service skeleton creators ----------
 create_service_files() {
-    echo -e "${YELLOW}Creating service files...${NC}"
-    
-    # OCR Service
-    cat > "$ROOT_DIR/services/ocr/main.py" << 'EOT'
-from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.responses import JSONResponse
-import base64
-import pytesseract
-from PIL import Image
-import io
-import os
+    echo -e "${YELLOW}Generating service skeletons (auth, stt, documents, llm, elevenlabs, rules)...${NC}"
 
-app = FastAPI(title="OCR Service")
-
-@app.post("/ocr")
-async def ocr(file: UploadFile = File(None), image_base64: str = None):
-    try:
-        if file:
-            content = await file.read()
-        elif image_base64:
-            content = base64.b64decode(image_base64)
-        else:
-            raise HTTPException(status_code=400, detail="No input provided")
-
-        image = Image.open(io.BytesIO(content))
-        text = pytesseract.image_to_string(image)
-        return {"text": text.strip()}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-EOT
-
-    # Requirements for OCR
-    cat > "$ROOT_DIR/services/ocr/requirements.txt" << 'EOT'
+    # -----------------------
+    # AUTH SERVICE (skeleton)
+    # -----------------------
+    mkdir -p "$ROOT_DIR/services/auth"
+    _safe_write "$ROOT_DIR/services/auth/requirements.txt" <<'REQ'
 fastapi>=0.95.0
 uvicorn[standard]>=0.21.0
-pytesseract>=0.3.10
-Pillow>=9.5.0
-python-multipart>=0.0.6
-EOT
+python-dotenv>=1.0.0
+psycopg2-binary>=2.9
+redis>=4.5.0
+pydantic>=2.0
+REQ
 
-    # STT Service
-    mkdir -p "$ROOT_DIR/services/stt"
-    cat > "$ROOT_DIR/services/stt/main.py" << 'EOT'
-from fastapi import FastAPI, UploadFile, HTTPException, status
-from fastapi.middleware.cors import CORSMiddleware
-import torch
-from transformers import WhisperProcessor, WhisperForConditionalGeneration
-import torchaudio
-import io
+    _safe_write "$ROOT_DIR/services/auth/main.py" <<'PYAUTH'
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 import os
 import logging
-from pathlib import Path
-from typing import Optional
+
+app = FastAPI(title="Auth Service (skeleton)")
+logging.basicConfig(level=logging.INFO)
+
+class HealthResponse(BaseModel):
+    status: str
+
+@app.get("/health")
+async def health():
+    return HealthResponse(status="healthy")
+PYAUTH
+
+    _safe_write "$ROOT_DIR/services/auth/Dockerfile" <<'DFAUTH'
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN apt-get update && apt-get install -y gcc libpq-dev && rm -rf /var/lib/apt/lists/*
+RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
+COPY . .
+EXPOSE 8000
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+DFAUTH
+
+    # -----------------------
+    # STT SERVICE (skeleton, CPU-friendly toggles)
+    # -----------------------
+    mkdir -p "$ROOT_DIR/services/stt"
+    _safe_write "$ROOT_DIR/services/stt/requirements.txt" <<'REQ'
+fastapi>=0.95.0
+uvicorn[standard]>=0.21.0
+python-multipart>=0.0.6
+python-dotenv>=1.0.0
+# heavy deps (optional) - comment out if you want a lightweight build:
+torch>=2.0.0
+torchaudio>=2.0.0
+transformers>=4.28.1
+soundfile>=0.12.1
+numpy>=1.23.0
+REQ
+
+    _safe_write "$ROOT_DIR/services/stt/main.py" <<'PYSTT'
+# Lightweight STT skeleton with optional model support
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from pydantic import BaseModel
-import numpy as np
+import os, io, logging, base64
 
-app = FastAPI(title="Speech-to-Text Service")
+app = FastAPI(title="STT Service (skeleton)")
+logging.basicConfig(level=logging.INFO)
 
-# Configure CORS
+class Base64Payload(BaseModel):
+    audio_base64: str
+    filename: str = "upload.wav"
+
+@app.get("/health")
+async def health():
+    return {"status":"healthy", "model_loaded": False}
+
+@app.post("/api/stt/transcribe")
+async def transcribe(file: UploadFile = File(None), payload: Base64Payload = None):
+    """
+    - Accepts multipart file upload or JSON base64 payload.
+    - Returns a mock transcription in skeleton mode.
+    """
+    if file:
+        data = await file.read()
+    elif payload:
+        data = base64.b64decode(payload.audio_base64)
+    else:
+        raise HTTPException(status_code=400, detail="No audio provided")
+
+    # In skeleton mode, we return a fixed response; replace with model logic in future blocks.
+    return {"transcription":"[skeleton] transcription not enabled in lightweight mode", "length_bytes": len(data)}
+PYSTT
+
+    _safe_write "$ROOT_DIR/services/stt/Dockerfile" <<'DFSTT'
+FROM python:3.11-slim
+RUN apt-get update && apt-get install -y ffmpeg libsndfile1 && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
+COPY . .
+EXPOSE 8000
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+DFSTT
+
+    # -----------------------
+    # DOCUMENTS SERVICE
+    # -----------------------
+    mkdir -p "$ROOT_DIR/services/documents/templates/sample"
+    _safe_write "$ROOT_DIR/services/documents/requirements.txt" <<'REQ'
+fastapi>=0.95.0
+uvicorn[standard]>=0.21.0
+Jinja2>=3.0
+PyYAML>=6.0
+REQ
+
+    _safe_write "$ROOT_DIR/services/documents/main.py" <<'PYDOCS'
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from typing import Dict, Any
+from pathlib import Path
+import yaml, uuid, datetime, logging
+from jinja2 import Environment, FileSystemLoader
+
+app = FastAPI(title="Documents Service (skeleton)")
+logging.basicConfig(level=logging.INFO)
+BASE = Path(__file__).resolve().parent
+TEMPLATES = BASE / "templates"
+OUT = BASE / "output"
+TEMPLATES.mkdir(exist_ok=True)
+OUT.mkdir(exist_ok=True)
+
+class GenReq(BaseModel):
+    template: str
+    data: Dict[str, Any] = {}
+    output_format: str = "html"
+
+@app.get("/health")
+async def health():
+    templates = [p.name for p in TEMPLATES.iterdir() if p.is_dir()]
+    return {"status":"healthy","templates":templates}
+
+@app.post("/generate")
+async def generate(req: GenReq):
+    tpl_dir = TEMPLATES / req.template
+    if not tpl_dir.exists():
+        raise HTTPException(status_code=404, detail="Template not found")
+    mapping = tpl_dir / "mapping.yaml"
+    if not mapping.exists():
+        raise HTTPException(status_code=400, detail="mapping.yaml missing")
+    cfg = yaml.safe_load(mapping.read_text())
+    tpl_file = tpl_dir / cfg.get("template_file")
+    env = Environment(loader=FileSystemLoader(str(tpl_dir)))
+    tpl = env.get_template(tpl_file.name)
+    data = {**cfg.get("sample_data",{}), **req.data}
+    if "date" not in data:
+        data["date"] = datetime.datetime.utcnow().isoformat()
+    rendered = tpl.render(**data)
+    doc_id = str(uuid.uuid4())
+    out_path = OUT / f"{doc_id}.{req.output_format}"
+    out_path.write_text(rendered, encoding="utf-8")
+    return {"document_id": doc_id, "path": str(out_path)}
+PYDOCS
+
+    _safe_write "$ROOT_DIR/services/documents/Dockerfile" <<'DFDOCS'
+FROM python:3.11-slim
+RUN apt-get update && apt-get install -y build-essential && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
+COPY . .
+EXPOSE 8000
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+DFDOCS
+
+    # create a sample template
+    _safe_write "$ROOT_DIR/services/documents/templates/sample/mapping.yaml" <<'MAP'
+name: "Sample Document"
+template_file: "template.html"
+sample_data:
+  title: "Sample Document"
+  recipient_name: "Jane Doe"
+  reference_number: "REF-2025-001"
+  amount: 123.45
+MAP
+
+    _safe_write "$ROOT_DIR/services/documents/templates/sample/template.html" <<'TPL'
+<html>
+  <head><meta charset="utf-8"><title>{{ title }}</title></head>
+  <body>
+    <h1>{{ title }}</h1>
+    <p>To: {{ recipient_name }}</p>
+    <p>Ref: {{ reference_number }}</p>
+    <p>Amount: {{ amount }}</p>
+    <p>Generated: {{ date }}</p>
+  </body>
+</html>
+TPL
+
+    # -----------------------
+    # LLM ENGINE (skeleton)
+    # -----------------------
+    mkdir -p "$ROOT_DIR/services/llm-engine"
+    _safe_write "$ROOT_DIR/services/llm-engine/requirements.txt" <<'REQ'
+fastapi>=0.95.0
+uvicorn[standard]>=0.21.0
+httpx>=0.24
+REQ
+
+    _safe_write "$ROOT_DIR/services/llm-engine/main.py" <<'PYLLM'
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+import os, logging, httpx
+
+app = FastAPI(title="LLM Engine (skeleton)")
+logging.basicConfig(level=logging.INFO)
+
+class LLMReq(BaseModel):
+    prompt: str
+    model: str = "local"
+
+@app.get("/health")
+async def health():
+    return {"status":"healthy","ollama": os.getenv("OLLAMA_BASE_URL", "")}
+
+@app.post("/generate")
+async def generate(req: LLMReq):
+    # This skeleton proxies to Ollama if available; otherwise returns echo.
+    ollama = os.getenv("OLLAMA_BASE_URL")
+    if ollama:
+        try:
+            async with httpx.AsyncClient() as client:
+                r = await client.post(f"{ollama}/api/generate", json={"model": req.model, "prompt": req.prompt}, timeout=30.0)
+                r.raise_for_status()
+                return {"text": r.json()}
+        except Exception as e:
+            return {"text": f"[proxy error] {str(e)}"}
+    return {"text": f"[skeleton] echo: {req.prompt}"}
+PYLLM
+
+    _safe_write "$ROOT_DIR/services/llm-engine/Dockerfile" <<'DFLLM'
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
+COPY . .
+EXPOSE 8000
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+DFLLM
+
+    # -----------------------
+    # ElevenLabs-like bridge (skeleton)
+    # -----------------------
+    mkdir -p "$ROOT_DIR/services/elevenlabs-service"
+    _safe_write "$ROOT_DIR/services/elevenlabs-service/requirements.txt" <<'REQ'
+fastapi>=0.95.0
+uvicorn[standard]>=0.21.0
+httpx>=0.24
+websockets>=11.0.0
+python-dotenv>=1.0.0
+REQ
+
+    _safe_write "$ROOT_DIR/services/elevenlabs-service/main.py" <<'PYEL'
+import asyncio, logging
+from fastapi import FastAPI, WebSocket
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI(title="ElevenLabs Bridge (skeleton)")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"])
+logging.basicConfig(level=logging.INFO)
+
+@app.get("/health")
+async def health():
+    return {"status":"healthy"}
+
+@app.websocket("/ws/{client_id}")
+async def websocket_endpoint(ws: WebSocket, client_id: str):
+    await ws.accept()
+    try:
+        while True:
+            msg = await ws.receive_text()
+            # echo back for now
+            await ws.send_text(f"[echo] {msg}")
+    except Exception:
+        await ws.close()
+PYEL
+
+    _safe_write "$ROOT_DIR/services/elevenlabs-service/Dockerfile" <<'DFEL'
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
+COPY . .
+EXPOSE 8000
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+DFEL
+
+    # -----------------------
+    # Rules Engine (skeleton)
+    # -----------------------
+    mkdir -p "$ROOT_DIR/services/rules"
+    _safe_write "$ROOT_DIR/services/rules/requirements.txt" <<'REQR'
+fastapi>=0.95.0
+uvicorn[standard]>=0.21.0
+pydantic>=2.0
+rule-engine>=4.5.3
+REQR
+
+    _safe_write "$ROOT_DIR/services/rules/main.py" <<'PYRULES'
+from fastapi import FastAPI
+import logging
+app = FastAPI(title="Rules Engine (skeleton)")
+logging.basicConfig(level=logging.INFO)
+
+@app.get("/health")
+async def health():
+    return {"status":"healthy","rules_loaded":0}
+
+@app.post("/evaluate")
+async def evaluate(payload: dict):
+    # Minimal evaluation stub
+    return {"matched": False, "decisions": {}}
+PYRULES
+
+    _safe_write "$ROOT_DIR/services/rules/Dockerfile" <<'DFRULE'
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
+COPY . .
+EXPOSE 8000
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+DFRULE
+
+    echo -e "${GREEN}✓ Service skeletons created${NC}"
+}
+
+# -------- Simple menu system (safe, improved) ----------
+show_menu() {
+    cat <<EOF
+
+${MAG}=== Superstack Manager ===${NC}
+
+1) Setup project (dirs, env, skeletons)
+2) Build all images (docker-compose build)
+3) Start all services (docker-compose up -d)
+4) Stop all services (docker-compose down)
+5) Status (docker-compose ps)
+6) Tail logs (choose a container)
+7) Add sample data / seeds
+0) Exit
+
+EOF
+    printf "Select an option: "
+}
+
+menu_loop() {
+    while true; do
+        show_menu
+        read -r choice
+        case "$choice" in
+            1)
+                create_directories
+                create_env_files
+                create_docker_compose
+                create_service_files
+                echo -e "${GREEN}Setup completed. Next: docker-compose build${NC}"
+                ;;
+            2)
+                echo -e "${YELLOW}Building images (this may take a while)...${NC}"
+                docker-compose build --pull
+                ;;
+            3)
+                echo -e "${YELLOW}Starting services...${NC}"
+                docker-compose up -d
+                ;;
+            4)
+                docker-compose down
+                ;;
+            5)
+                docker-compose ps
+                ;;
+            6)
+                echo "Enter container name (eg stt-service):"
+                read -r ctn
+                docker-compose logs -f "$ctn"
+                ;;
+            7)
+                echo -e "${YELLOW}Seeding sample templates for documents...${NC}"
+                # nothing heavy here; sample template already created
+                ls -la services/documents/templates || true
+                ;;
+            0)
+                echo -e "${GREEN}Bye${NC}"
+                exit 0
+                ;;
+            *)
+                echo -e "${RED}Invalid option${NC}"
+                ;;
+        esac
+    done
+}
+
+# Run menu if executed directly
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    echo -e "${BLUE}All-in-one setup script (block 1).${NC}"
+    echo -e "${YELLOW}Tip: after setup, run option 2 to build images.${NC}"
+    menu_loop
+fi
+# ==============================================================================
+# ALL-IN-ONE: AI Platform Superstack — FULL STT (CPU) + DocSign (Block 2/...)
+#
+# Paste this directly after Block 1 in your `all-in-one.sh` file.
+# This block:
+#  - Replaces the lightweight STT skeleton with a CPU-optimized, production-like
+#    STT service (Whisper via transformers + torchaudio) configured for CPU-only.
+#  - Adds a DocSign service that accepts a PDF and a signature (image or text),
+#    then overlays the signature onto the last page and returns the signed PDF.
+#  - Writes docker-compose.override.yml so you don't lose the cleaned compose.
+#
+# IMPORTANT:
+#  - These services will build locally and may take time due to wheel compilation.
+#    To speed builds, prefer installing prebuilt wheels for torch/torchaudio (see README).
+#  - All model usage is CPU-only (explicit device set to "cpu"). No GPU bits or CUDA.
+# ==============================================================================
+
+# -------- Helper: ensure _safe_write exists (from Block 1) ----------
+if ! declare -f _safe_write >/dev/null 2>&1; then
+  echo -e "${RED}Error:${NC} _safe_write helper not found. Make sure you pasted Block 1 before Block 2."
+  exit 1
+fi
+
+# -------------------------------
+# Full STT implementation (CPU)
+# -------------------------------
+create_stt_full() {
+    echo -e "${YELLOW}Creating full STT service (CPU-only)...${NC}"
+    mkdir -p "$ROOT_DIR/services/stt"
+    # requirements: recommend CPU-specific torch wheels if possible
+    _safe_write "$ROOT_DIR/services/stt/requirements.txt" <<'REQ'
+fastapi>=0.95.0
+uvicorn[standard]>=0.21.0
+python-multipart>=0.0.6
+transformers>=4.30.0
+torchaudio>=2.2.2
+torch>=2.2.2
+soundfile>=0.12.1
+numpy>=1.24.0
+python-dotenv>=1.0.0
+pydantic>=2.0
+REQ
+
+    # CPU-only optimized Dockerfile: uses manylinux CPU wheel index hint (user may override)
+    _safe_write "$ROOT_DIR/services/stt/Dockerfile" <<'DFSTT'
+# STT service Dockerfile (CPU-only optimized)
+FROM python:3.11-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system deps needed for audio processing and torch wheels
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    ffmpeg \
+    libsndfile1 \
+    libjpeg-dev \
+    zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy requirements and install
+COPY requirements.txt .
+
+# NOTE: If you have a faster way to install CPU wheels (like a local wheelcache),
+# edit the requirements or run pip with --find-links to a wheel index.
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copy application
+COPY . .
+
+# Create a non-root user to run the app
+RUN adduser --disabled-password --gecos "" appuser && chown -R appuser /app
+USER appuser
+
+EXPOSE 8000
+
+# Run uvicorn
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+DFSTT
+
+    # Main STT app: CPU-only whisper using transformers + torchaudio
+    _safe_write "$ROOT_DIR/services/stt/main.py" <<'PYSTT_MAIN'
+"""
+STT Service (CPU-only)
+
+Endpoints:
+ - GET  /health
+ - POST /api/stt/transcribe  (multipart form 'file' or JSON { "audio_base64": "...", "filename": "..." })
+
+Behavior:
+ - Loads a small Whisper model by default (openai/whisper-tiny).
+ - Forces device to CPU. No CUDA usage.
+ - Uses torchaudio to read audio buffers and resamples to 16kHz.
+ - Returns plain text transcription.
+
+Notes:
+ - This is designed for CPU-only environments. Use a small model for reasonable latency.
+ - For production, consider model caching and background downloads.
+"""
+
+import os
+import io
+import base64
+import logging
+from typing import Optional
+from fastapi import FastAPI, UploadFile, File, HTTPException, status
+from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
+
+# optional heavy imports
+try:
+    import torch
+    import torchaudio
+    from transformers import WhisperProcessor, WhisperForConditionalGeneration
+except Exception as e:
+    torch = None
+    torchaudio = None
+    WhisperProcessor = None
+    WhisperForConditionalGeneration = None
+    IMPORT_ERROR = str(e)
+else:
+    IMPORT_ERROR = None
+
+app = FastAPI(title="STT Service (CPU)")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*"]
 )
 
-# Configure logging
+logger = logging.getLogger("stt")
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
-# Model and processor
-model = None
-processor = None
+MODEL = None
+PROCESSOR = None
+MODEL_NAME = os.getenv("STT_MODEL", os.getenv("STT_MODEL_NAME", "openai/whisper-tiny"))
+MODEL_CACHE = os.getenv("MODEL_PATH", "/root/.cache/models")
+DEVICE = torch.device("cpu") if torch else None
 
-class HealthResponse(BaseModel):
-    status: str
-    model_loaded: bool
-
-class TranscriptionRequest(BaseModel):
-    audio: UploadFile
+class Base64Payload(BaseModel):
+    audio_base64: str
+    filename: Optional[str] = "upload.wav"
     language: Optional[str] = "en"
 
 @app.on_event("startup")
-async def load_model():
-    global model, processor
+def load_model():
+    global MODEL, PROCESSOR
+    if IMPORT_ERROR:
+        logger.warning("Model libraries not available: %s", IMPORT_ERROR)
+        return
+
     try:
-        model_path = os.getenv("MODEL_PATH", "/root/.cache/whisper")
-        model_name = "openai/whisper-tiny"  # Using tiny model for CPU
-        
-        logger.info(f"Loading Whisper model: {model_name}")
-        
-        # Load model with CPU-specific settings
-        model = WhisperForConditionalGeneration.from_pretrained(
-            model_name,
-            cache_dir=model_path,
-            torch_dtype=torch.float32,
-            low_cpu_mem_usage=True,
-        )
-        
-        processor = WhisperProcessor.from_pretrained(model_name, cache_dir=model_path)
-        logger.info("Model and processor loaded successfully")
+        logger.info("Loading model '%s' into device '%s' (cache=%s)", MODEL_NAME, DEVICE, MODEL_CACHE)
+        # load processor + model, forcing CPU (torch device will be cpu)
+        PROCESSOR = WhisperProcessor.from_pretrained(MODEL_NAME, cache_dir=MODEL_CACHE)
+        MODEL = WhisperForConditionalGeneration.from_pretrained(MODEL_NAME, cache_dir=MODEL_CACHE)
+        if torch:
+            MODEL.to(DEVICE)
+        logger.info("Model loaded successfully")
     except Exception as e:
-        logger.error(f"Error loading model: {str(e)}")
+        logger.exception("Failed to load model: %s", e)
+        MODEL = None
+        PROCESSOR = None
+
+@app.get("/health")
+async def health():
+    return {
+        "status": "healthy" if MODEL is not None and PROCESSOR is not None else "model not loaded",
+        "model": MODEL_NAME,
+        "import_error": IMPORT_ERROR or ""
+    }
+
+def read_audio_bytes(audio_bytes: bytes):
+    """Load audio bytes to waveform (tensor) and sample rate using torchaudio"""
+    if torchaudio is None:
+        raise RuntimeError("torchaudio not available")
+    bio = io.BytesIO(audio_bytes)
+    waveform, sr = torchaudio.load(bio)
+    # convert to mono
+    if waveform.dim() > 1 and waveform.size(0) > 1:
+        waveform = waveform.mean(dim=0, keepdim=True)
+    # resample to 16000 if needed
+    if sr != 16000:
+        resampler = torchaudio.transforms.Resample(orig_freq=sr, new_freq=16000)
+        waveform = resampler(waveform)
+        sr = 16000
+    return waveform.squeeze(0).numpy(), sr
+
+@app.post("/api/stt/transcribe")
+async def transcribe(file: UploadFile = File(None), payload: Base64Payload = None, language: str = "en"):
+    """
+    Accepts either:
+     - multipart 'file'
+     - JSON body with base64 audio (POST with JSON)
+    Returns: {"transcription": "..."}
+    """
+    if IMPORT_ERROR:
+        raise HTTPException(status_code=503, detail=f"Missing dependencies: {IMPORT_ERROR}")
+
+    if MODEL is None or PROCESSOR is None:
+        raise HTTPException(status_code=503, detail="Model not loaded")
+
+    audio_bytes = None
+    try:
+        if file:
+            audio_bytes = await file.read()
+        elif payload and payload.audio_base64:
+            audio_bytes = base64.b64decode(payload.audio_base64)
+        else:
+            raise HTTPException(status_code=400, detail="No audio provided")
+
+        waveform_np, sr = read_audio_bytes(audio_bytes)
+
+        # Prepare features
+        inputs = PROCESSOR(waveform_np, sampling_rate=sr, return_tensors="pt")
+        # Ensure tensors on CPU
+        inputs = {k: v.to(DEVICE) for k, v in inputs.items()}
+
+        # Generate
+        with torch.no_grad():
+            predicted_ids = MODEL.generate(**inputs)
+        transcription = PROCESSOR.batch_decode(predicted_ids, skip_special_tokens=True)[0]
+
+        return {"transcription": transcription, "language": language}
+    except HTTPException:
         raise
-
-@app.get("/health")
-async def health_check():
-    return {
-        "status": "healthy" if model is not None else "model not loaded",
-        "model_loaded": model is not None
-    }
-
-@app.post("/transcribe")
-async def transcribe_audio(audio: UploadFile, language: str = "en"):
-    if not model or not processor:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Model not loaded"
-        )
-    
-    try:
-        # Read and process audio
-        content = await audio.read()
-        audio_data, sample_rate = torchaudio.load(io.BytesIO(content), format=audio.filename.split('.')[-1])
-        
-        # Convert to mono if stereo
-        if len(audio_data.shape) > 1 and audio_data.shape[0] > 1:
-            audio_data = torch.mean(audio_data, dim=0, keepdim=True)
-        
-        # Resample if needed
-        if sample_rate != 16000:
-            resampler = torchaudio.transforms.Resample(orig_freq=sample_rate, new_freq=16000)
-            audio_data = resampler(audio_data)
-        
-        # Get input features
-        input_features = processor(
-            audio_data.squeeze().numpy(),
-            sampling_rate=16000,
-            return_tensors="pt"
-        ).input_features
-        
-        # Generate token ids
-        predicted_ids = model.generate(input_features)
-        
-        # Decode token ids to text
-        transcription = processor.batch_decode(predicted_ids, skip_special_tokens=True)[0]
-        
-        return {
-            "transcription": transcription,
-            "language": language,
-            "model": "whisper-tiny"
-        }
-    
     except Exception as e:
-        logger.error(f"Transcription error: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error processing audio: {str(e)}"
-        )
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-EOT
-
-    # Requirements for STT
-    cat > "$ROOT_DIR/services/stt/requirements.txt" << 'EOT'
-fastapi>=0.95.0
-uvicorn[standard]>=0.21.0
-torch>=2.0.0
-torchaudio>=2.0.0
-transformers>=4.28.0
-soundfile>=0.12.1
-numpy>=1.24.2
-python-multipart>=0.0.6
-python-dotenv>=1.0.0
-EOT
-
-    # Create rules service directory
-    mkdir -p "$ROOT_DIR/services/rules"
-    
-    # Create rules service requirements
-    cat > "$ROOT_DIR/services/rules/requirements.txt" << 'RULES_REQ'
-fastapi>=0.104.1,<1.0.0
-uvicorn[standard]>=0.24.0,<0.25.0
-pydantic>=2.5.0,<3.0.0
-python-multipart>=0.0.6,<1.0.0
-rule-engine>=4.5.3,<5.0.0
-RULES_REQ
-
-    # Create rules service main file
-    cat > "$ROOT_DIR/services/rules/main.py" << 'RULES_MAIN'
-from fastapi import FastAPI, HTTPException, BackgroundTasks
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, validator
-from typing import Optional, List, Dict, Any, Union
-import rule_engine
-import json
-import logging
-from datetime import datetime
-from enum import Enum
-import uuid
-import re
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-app = FastAPI(
-    title="Rules Engine Service",
-    description="Declarative business rules engine with CPU-optimized evaluation",
-    version="1.0.0"
-)
-
-# CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# ==================== Enums ====================
-
-class RuleStatus(str, Enum):
-    ACTIVE = "active"
-    INACTIVE = "inactive"
-    TESTING = "testing"
-    ARCHIVED = "archived"
-
-class RulePriority(str, Enum):
-    CRITICAL = "critical"
-    HIGH = "high"
-    MEDIUM = "medium"
-    LOW = "low"
-
-class DecisionType(str, Enum):
-    APPROVE = "approve"
-    REJECT = "reject"
-    REVIEW = "review"
-    ESCALATE = "escalate"
-    NOTIFY = "notify"
-
-# ==================== Models ====================
-
-class RuleCondition(BaseModel):
-    """Single rule condition"""
-    field: str
-    operator: str
-    value: Any
-
-    @validator('operator')
-    def validate_operator(cls, v):
-        valid_operators = ['==', '!=', '>', '<', '>=', '<=', 'in', 'not in', 'contains', 'starts_with', 'ends_with']
-        if v not in valid_operators:
-            raise ValueError(f'Operator must be one of {valid_operators}')
-        return v
-
-class RuleAction(BaseModel):
-    """Action to execute when rule matches"""
-    type: str
-    parameters: Dict[str, Any] = {}
-
-class Rule(BaseModel):
-    """Complete rule definition"""
-    id: Optional[str] = None
-    name: str
-    description: Optional[str] = None
-    category: str = "general"
-    priority: RulePriority = RulePriority.MEDIUM
-    status: RuleStatus = RuleStatus.ACTIVE
-    when: str
-    then: Dict[str, Any]
-    defaults: Dict[str, Any] = {}
-    version: int = 1
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-    created_by: Optional[str] = None
-    tags: List[str] = []
-
-class RuleSet(BaseModel):
-    """Collection of related rules"""
-    id: Optional[str] = None
-    name: str
-    description: Optional[str] = None
-    rules: List[Rule] = []
-    priority_order: List[str] = []
-    metadata: Dict[str, Any] = {}
-
-class EvaluationRequest(BaseModel):
-    """Request to evaluate rules"""
-    rules: Optional[List[Rule]] = None
-    rule_set_id: Optional[str] = None
-    facts: Dict[str, Any]
-    context: Dict[str, Any] = {}
-
-    @validator('rules', 'rule_set_id')
-    def check_rules_or_set(cls, v, values):
-        if v is None and 'rule_set_id' not in values:
-            raise ValueError('Either rules or rule_set_id must be provided')
-        return v
-
-class EvaluationResult(BaseModel):
-    """Result of rule evaluation"""
-    matched: bool
-    rule_id: str
-    rule_name: str
-    decisions: Dict[str, Any]
-    execution_time_ms: float
-    priority: str
-
-class EvaluationResponse(BaseModel):
-    """Complete evaluation response"""
-    results: List[EvaluationResult]
-    final_decision: Dict[str, Any]
-    total_matches: int
-    execution_time_ms: float
-    evaluation_id: str
-
-class TestRequest(BaseModel):
-    """Test rule with sample data"""
-    rule: Rule
-    test_cases: List[Dict[str, Any]]
-
-class TestResult(BaseModel):
-    """Result of rule testing"""
-    test_case_index: int
-    facts: Dict[str, Any]
-    matched: bool
-    decisions: Dict[str, Any]
-    expected: Optional[bool] = None
-    passed: Optional[bool] = None
-
-class ChainRequest(BaseModel):
-    """Request to execute rule chain"""
-    initial_facts: Dict[str, Any]
-    rule_chain: List[str]
-    max_iterations: int = 10
-
-# ==================== Rule Engine Core ====================
-
-class RuleEngineCore:
-    """Core rule evaluation engine using rule_engine library"""
-    def __init__(self):
-        self.rule_cache = {}
-
-    def evaluate_rule(self, rule: Rule, facts: Dict[str, Any]) -> EvaluationResult:
-        """Evaluate a single rule against facts"""
-        start_time = datetime.utcnow()
-        try:
-            # Compile rule if not in cache
-            if rule.id not in self.rule_cache:
-                self.rule_cache[rule.id] = rule_engine.Rule(rule.when)
-            
-            # Evaluate rule
-            context = {**rule.defaults, **facts}
-            matched = self.rule_cache[rule.id].matches(context)
-            
-            # Execute actions if rule matches
-            decisions = {}
-            if matched and rule.then:
-                decisions = rule.then
-            
-            return EvaluationResult(
-                matched=matched,
-                rule_id=rule.id or "",
-                rule_name=rule.name,
-                decisions=decisions,
-                execution_time_ms=(datetime.utcnow() - start_time).total_seconds() * 1000,
-                priority=rule.priority
-            )
-            
-        except Exception as e:
-            logger.error(f"Error evaluating rule {rule.id}: {str(e)}")
-            raise HTTPException(status_code=400, detail=f"Rule evaluation failed: {str(e)}")
-
-    def evaluate_rules(self, rules: List[Rule], facts: Dict[str, Any], stop_on_first_match: bool = False) -> List[EvaluationResult]:
-        """Evaluate multiple rules"""
-        results = []
-        for rule in rules:
-            result = self.evaluate_rule(rule, facts)
-            results.append(result)
-            if stop_on_first_match and result.matched:
-                break
-        return results
-
-# ==================== Rule Storage ====================
-
-class RuleStore:
-    """In-memory rule storage (use PostgreSQL in production)"""
-    def __init__(self):
-        self.rules: Dict[str, Rule] = {}
-        self.rule_sets: Dict[str, RuleSet] = {}
-        self.rule_history: Dict[str, List[Rule]] = {}
-        self._load_sample_rules()
-    
-    def _load_sample_rules(self):
-        """Load sample rules for demonstration"""
-        sample_rule = Rule(
-            id="sample-rule-1",
-            name="High Value Transaction Check",
-            description="Flag transactions over $10,000 for review",
-            category="fraud_detection",
-            priority=RulePriority.HIGH,
-            when="amount > 10000",
-            then={"status": "review_required", "reason": "High value transaction"},
-            defaults={"currency": "USD"}
-        )
-        self.save_rule(sample_rule)
-    
-    def save_rule(self, rule: Rule):
-        """Save a rule"""
-        if not rule.id:
-            rule.id = f"rule-{str(uuid.uuid4())[:8]}"
-        
-        # Update timestamps
-        now = datetime.utcnow()
-        if not rule.created_at:
-            rule.created_at = now
-        rule.updated_at = now
-        
-        # Save to history
-        if rule.id not in self.rule_history:
-            self.rule_history[rule.id] = []
-        self.rule_history[rule.id].append(rule.copy(deep=True))
-        
-        # Save current version
-        self.rules[rule.id] = rule
-        return rule
-    
-    def get_rule(self, rule_id: str) -> Optional[Rule]:
-        """Get rule by ID"""
-        return self.rules.get(rule_id)
-    
-    def list_rules(self, category: Optional[str] = None, status: Optional[RuleStatus] = None) -> List[Rule]:
-        """List all rules with optional filters"""
-        result = list(self.rules.values())
-        if category:
-            result = [r for r in result if r.category == category]
-        if status:
-            result = [r for r in result if r.status == status]
-        return result
-    
-    def delete_rule(self, rule_id: str) -> bool:
-        """Delete a rule"""
-        if rule_id in self.rules:
-            del self.rules[rule_id]
-            return True
-        return False
-    
-    def get_rule_history(self, rule_id: str) -> List[Rule]:
-        """Get rule version history"""
-        return self.rule_history.get(rule_id, [])
-    
-    def save_rule_set(self, rule_set: RuleSet) -> RuleSet:
-        """Save a rule set"""
-        if not rule_set.id:
-            rule_set.id = f"ruleset-{str(uuid.uuid4())[:8]}"
-        self.rule_sets[rule_set.id] = rule_set
-        return rule_set
-    
-    def get_rule_set(self, rule_set_id: str) -> Optional[RuleSet]:
-        """Get rule set by ID"""
-        return self.rule_sets.get(rule_set_id)
-    
-    def list_rule_sets(self) -> List[RuleSet]:
-        """List all rule sets"""
-        return list(self.rule_sets.values())
-
-# ==================== Rule Chaining ====================
-
-class RuleChainExecutor:
-    """Execute chains of rules where one triggers another"""
-    def __init__(self, rule_engine: RuleEngineCore, rule_store: RuleStore):
-        self.rule_engine = rule_engine
-        self.rule_store = rule_store
-    
-    def execute_chain(
-        self, 
-        initial_facts: Dict[str, Any], 
-        rule_chain: List[str],
-        max_iterations: int = 10
-    ) -> Dict[str, Any]:
-        """Execute a chain of rules"""
-        facts = initial_facts.copy()
-        results = {}
-        
-        for i in range(max_iterations):
-            rule_id = rule_chain[i % len(rule_chain)]
-            rule = self.rule_store.get_rule(rule_id)
-            
-            if not rule:
-                logger.warning(f"Rule {rule_id} not found in chain")
-                break
-                
-            result = self.rule_engine.evaluate_rule(rule, facts)
-            results[rule_id] = result
-            
-            # Update facts with decisions
-            if result.matched and result.decisions:
-                facts.update(result.decisions)
-            
-            # Stop if we've gone through all rules
-            if i >= len(rule_chain) - 1:
-                break
-        
-        return {"facts": facts, "results": results}
-
-# ==================== Initialize Services ====================
-
-rule_engine = RuleEngineCore()
-rule_store = RuleStore()
-rule_chain_executor = RuleChainExecutor(rule_engine, rule_store)
-
-# ==================== API Endpoints ====================
-
-@app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    return {
-        "status": "healthy",
-        "version": "1.0.0",
-        "timestamp": datetime.utcnow().isoformat(),
-        "rules_count": len(rule_store.rules),
-        "rule_sets_count": len(rule_store.rule_sets)
-    }
-
-@app.post("/evaluate", response_model=EvaluationResponse)
-async def evaluate_rules(request: EvaluationRequest):
-    """
-    Evaluate rules against provided facts
-    
-    Supports:
-    - Direct rule evaluation
-    - Rule set evaluation
-    - Priority-based execution
-    """
-    start_time = datetime.utcnow()
-    evaluation_id = f"eval-{str(uuid.uuid4())[:8]}"
-    
-    try:
-        # Get rules to evaluate
-        rules_to_evaluate = []
-        if request.rules:
-            rules_to_evaluate = request.rules
-        elif request.rule_set_id:
-            rule_set = rule_store.get_rule_set(request.rule_set_id)
-            if not rule_set:
-                raise HTTPException(status_code=404, detail="Rule set not found")
-            rules_to_evaluate = rule_set.rules
-        
-        # Evaluate rules
-        results = []
-        for rule in rules_to_evaluate:
-            if rule.status != RuleStatus.ACTIVE:
-                continue
-                
-            result = rule_engine.evaluate_rule(rule, request.facts)
-            results.append(result)
-        
-        # Determine final decision
-        final_decision = {}
-        if results:
-            # Get highest priority match
-            priority_order = [RulePriority.CRITICAL, RulePriority.HIGH, 
-                            RulePriority.MEDIUM, RulePriority.LOW]
-            
-            for priority in priority_order:
-                for result in results:
-                    if result.matched and result.priority == priority:
-                        final_decision = result.decisions
-                        break
-                if final_decision:
-                    break
-        
-        execution_time_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
-        
-        return EvaluationResponse(
-            results=results,
-            final_decision=final_decision,
-            total_matches=sum(1 for r in results if r.matched),
-            execution_time_ms=execution_time_ms,
-            evaluation_id=evaluation_id
-        )
-        
-    except Exception as e:
-        logger.error(f"Evaluation {evaluation_id} failed: {str(e)}")
+        logger.exception("Transcription failure")
         raise HTTPException(status_code=500, detail=str(e))
+PYSTT_MAIN
 
-@app.post("/rules", response_model=Rule)
-async def load_rule(rule: Rule):
-    """Load or update a rule"""
-    try:
-        return rule_store.save_rule(rule)
-    except Exception as e:
-        logger.error(f"Error saving rule: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
-
-@app.post("/rules/dsl", response_model=Rule)
-async def load_rule_from_dsl(dsl_text: str):
-    """Load rule from DSL format"""
-    try:
-        # In a real implementation, parse the DSL text into a Rule object
-        # For now, just return a sample rule
-        return Rule(
-            name="DSL Rule",
-            description="Rule loaded from DSL",
-            when="amount > 1000",
-            then={"status": "review_required"}
-        )
-    except Exception as e:
-        logger.error(f"Error parsing DSL: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
-
-@app.get("/rules", response_model=List[Rule])
-async def list_rules(
-    category: Optional[str] = None,
-    status: Optional[RuleStatus] = None
-):
-    """List all rules with optional filters"""
-    try:
-        return rule_store.list_rules(category=category, status=status)
-    except Exception as e:
-        logger.error(f"Error listing rules: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/rules/{rule_id}", response_model=Rule)
-async def get_rule(rule_id: str):
-    """Get rule by ID"""
-    rule = rule_store.get_rule(rule_id)
-    if not rule:
-        raise HTTPException(status_code=404, detail="Rule not found")
-    return rule
-
-@app.delete("/rules/{rule_id}")
-async def delete_rule(rule_id: str):
-    """Delete a rule"""
-    if not rule_store.delete_rule(rule_id):
-        raise HTTPException(status_code=404, detail="Rule not found")
-    return {"status": "deleted", "rule_id": rule_id}
-
-@app.get("/rules/{rule_id}/history", response_model=List[Rule])
-async def get_rule_history(rule_id: str):
-    """Get rule version history"""
-    history = rule_store.get_rule_history(rule_id)
-    if not history:
-        raise HTTPException(status_code=404, detail="No history found for rule")
-    return history
-
-@app.post("/test", response_model=List[TestResult])
-async def test_rule(request: TestRequest):
-    """Test rule with multiple test cases"""
-    results = []
-    
-    for i, test_case in enumerate(request.test_cases):
-        try:
-            # Evaluate rule with test case
-            result = rule_engine.evaluate_rule(request.rule, test_case["facts"])
-            
-            # Check if test passed (if expected result was provided)
-            passed = None
-            if "expected" in test_case:
-                passed = result.matched == test_case["expected"]
-            
-            results.append(TestResult(
-                test_case_index=i,
-                facts=test_case["facts"],
-                matched=result.matched,
-                decisions=result.decisions,
-                expected=test_case.get("expected"),
-                passed=passed
-            ))
-            
-        except Exception as e:
-            logger.error(f"Error in test case {i}: {str(e)}")
-            results.append(TestResult(
-                test_case_index=i,
-                facts=test_case.get("facts", {}),
-                matched=False,
-                decisions={"error": str(e)},
-                expected=test_case.get("expected"),
-                passed=False
-            ))
-    
-    return results
-
-@app.post("/chain", response_model=Dict[str, Any])
-async def execute_rule_chain(request: ChainRequest):
-    """Execute a chain of rules"""
-    try:
-        return rule_chain_executor.execute_chain(
-            request.initial_facts,
-            request.rule_chain,
-            request.max_iterations
-        )
-    except Exception as e:
-        logger.error(f"Error executing rule chain: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
-
-@app.post("/rulesets", response_model=RuleSet)
-async def create_rule_set(rule_set: RuleSet):
-    """Create a new rule set"""
-    try:
-        return rule_store.save_rule_set(rule_set)
-    except Exception as e:
-        logger.error(f"Error creating rule set: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
-
-@app.get("/rulesets", response_model=List[RuleSet])
-async def list_rule_sets():
-    """List all rule sets"""
-    try:
-        return rule_store.list_rule_sets()
-    except Exception as e:
-        logger.error(f"Error listing rule sets: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/rulesets/{rule_set_id}", response_model=RuleSet)
-async def get_rule_set(rule_set_id: str):
-    """Get rule set by ID"""
-    rule_set = rule_store.get_rule_set(rule_set_id)
-    if not rule_set:
-        raise HTTPException(status_code=404, detail="Rule set not found")
-    return rule_set
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-RULES_MAIN
-
-    # Create documents service directory
-    mkdir -p "$ROOT_DIR/services/documents"
-    
-    # Create documents service requirements
-    cat > "$ROOT_DIR/services/documents/requirements.txt" << 'DOCS_REQ'
-fastapi==0.109.0
-uvicorn[standard]==0.27.0
-pydantic==2.5.3
-python-multipart==0.0.6
-PyYAML==6.0.2
-Jinja2==3.1.4
-docxtpl==0.16.8
-openpyxl==3.1.5
-pandas==2.2.2
-PyPDF2==3.0.1
-pikepdf==9.4.0
-Pillow==10.4.0
-qrcode==7.4.2
-minio==7.1.16
-python-magic==0.4.27
-python-dotenv==1.0.0
-DOCS_REQ
-
-    # Create documents service main file
-    mkdir -p "$ROOT_DIR/services/documents/templates"
-    mkdir -p "$ROOT_DIR/services/documents/output"
-    
-    # Create sample template
-    mkdir -p "$ROOT_DIR/services/documents/templates/sample"
-    
-    # Create sample template file
-    cat > "$ROOT_DIR/services/documents/templates/sample/template.html" << 'SAMPLE_HTML'
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Sample Document</title>
-    <style>
-        body { font-family: Arial, sans-serif; line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 20px; }
-        .header { text-align: center; margin-bottom: 30px; }
-        .content { margin: 20px 0; }
-        .footer { margin-top: 50px; font-size: 0.9em; color: #666; text-align: center; }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>{{ title }}</h1>
-        <p>Generated on {{ date }}</p>
-    </div>
-    
-    <div class="content">
-        <p>Hello {{ recipient_name }},</p>
-        
-        <p>This is a sample document generated from the template engine service.</p>
-        
-        <h2>Document Details</h2>
-        <ul>
-            <li>Reference: {{ reference_number }}</li>
-            <li>Amount: {{ "${:,.2f}".format(amount) if amount else 'N/A' }}</li>
-            <li>Status: <strong>{{ status|default('Pending') }}</strong></li>
-        </ul>
-        
-        {% if notes %}
-        <h3>Notes:</h3>
-        <p>{{ notes }}</p>
-        {% endif %}
-    </div>
-    
-    <div class="footer">
-        <p>This is an automatically generated document. Please do not reply to this email.</p>
-        {% if qr_data %}
-        <div style="text-align: center; margin-top: 20px;">
-            <img src="data:image/png;base64,{{ qr_data }}" alt="QR Code">
-        </div>
-        {% endif %}
-    </div>
-</body>
-</html>
-SAMPLE_HTML
-
-    # Create template mapping file
-    cat > "$ROOT_DIR/services/documents/templates/sample/mapping.yaml" << 'MAPPING_YAML'
-name: "Sample Document"
-description: "A sample document template for demonstration"
-template_file: "sample/template.html"
-output_format: "pdf"
-fields:
-  title:
-    type: "string"
-    required: true
-    description: "Document title"
-  recipient_name:
-    type: "string"
-    required: true
-    description: "Name of the recipient"
-  reference_number:
-    type: "string"
-    required: false
-    description: "Reference number"
-  amount:
-    type: "number"
-    required: false
-    description: "Transaction amount"
-  status:
-    type: "string"
-    required: false
-    description: "Document status"
-    default: "Draft"
-  notes:
-    type: "text"
-    required: false
-    description: "Additional notes"
-  qr_data:
-    type: "string"
-    required: false
-    description: "Base64 encoded QR code data"
-sample_data:
-  title: "Sample Document"
-  recipient_name: "John Doe"
-  reference_number: "REF-2023-001"
-  amount: 1234.56
-  status: "Approved"
-  notes: "This is a sample note for demonstration purposes."
-MAPPING_YAML
-
-    # Create documents service main file
-    cat > "$ROOT_DIR/services/documents/main.py" << 'DOCS_MAIN'
-from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks, Body
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import BaseModel, Field, validator
-from typing import Optional, List, Dict, Any, Union
-import yaml
-import json
-import logging
-from datetime import datetime
-from enum import Enum
-from pathlib import Path
-import os
-import re
-import base64
-import hashlib
-import uuid
-import io
-
-# Document processing
-from jinja2 import Environment, FileSystemLoader, Template
-from docxtpl import DocxTemplate
-from docx import Document
-import openpyxl
-import pandas as pd
-
-# PDF processing
-from PyPDF2 import PdfReader, PdfWriter
-import pikepdf
-
-# Image processing
-from PIL import Image, ImageDraw, ImageFont
-import qrcode
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-app = FastAPI(
-    title="Document Generation Service",
-    description="Template-based document generation service with support for multiple formats",
-    version="1.0.0"
-)
-
-# CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Ensure template and output directories exist
-TEMPLATES_DIR = Path("templates")
-OUTPUT_DIR = Path("output")
-TEMPLATES_DIR.mkdir(exist_ok=True)
-OUTPUT_DIR.mkdir(exist_ok=True)
-
-# Simple in-memory storage for generated documents
-document_store = {}
-
-class OutputFormat(str, Enum):
-    PDF = "pdf"
-    DOCX = "docx"
-    XLSX = "xlsx"
-    CSV = "csv"
-    HTML = "html"
-    PNG = "png"
-    JPG = "jpg"
-
-class GenerateRequest(BaseModel):
-    template_path: str
-    data: Dict[str, Any]
-    output_format: OutputFormat = OutputFormat.PDF
-    options: Dict[str, Any] = {}
-
-class GenerateResponse(BaseModel):
-    document_id: str
-    output_format: str
-    download_url: str
-    timestamp: datetime
-
-class TemplateInfo(BaseModel):
-    name: str
-    path: str
-    description: Optional[str] = None
-    fields: Dict[str, Any] = {}
-    sample_data: Dict[str, Any] = {}
-
-@app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    return {
-        "status": "healthy",
-        "version": "1.0.0",
-        "timestamp": datetime.utcnow().isoformat(),
-        "templates_available": len(list(TEMPLATES_DIR.glob("**/*.html")))
-    }
-
-@app.get("/templates", response_model=List[TemplateInfo])
-async def list_templates():
-    """List all available templates"""
-    templates = []
-    for mapping_file in TEMPLATES_DIR.glob("**/mapping.yaml"):
-        try:
-            with open(mapping_file, 'r') as f:
-                mapping = yaml.safe_load(f)
-                templates.append(TemplateInfo(
-                    name=mapping.get("name", mapping_file.parent.name),
-                    path=str(mapping_file.relative_to(TEMPLATES_DIR).parent),
-                    description=mapping.get("description"),
-                    fields=mapping.get("fields", {}),
-                    sample_data=mapping.get("sample_data", {})
-                ))
-        except Exception as e:
-            logger.error(f"Error loading template {mapping_file}: {str(e)}")
-    return templates
-
-@app.post("/generate", response_model=GenerateResponse)
-async def generate_document(request: GenerateRequest):
-    """Generate a document from a template"""
-    try:
-        # Generate a unique document ID
-        doc_id = str(uuid.uuid4())
-        
-        # Get template path
-        template_dir = TEMPLATES_DIR / request.template_path
-        mapping_file = template_dir / "mapping.yaml"
-        
-        if not mapping_file.exists():
-            raise HTTPException(status_code=404, detail=f"Template mapping not found: {request.template_path}")
-        
-        # Load template mapping
-        with open(mapping_file, 'r') as f:
-            mapping = yaml.safe_load(f)
-        
-        # Get template file
-        template_file = template_dir / mapping["template_file"]
-        if not template_file.exists():
-            raise HTTPException(status_code=404, detail=f"Template file not found: {mapping['template_file']}")
-        
-        # Render template
-        env = Environment(loader=FileSystemLoader(template_dir))
-        template = env.get_template(template_file.name)
-        
-        # Add default data
-        data = {**mapping.get("sample_data", {}), **request.data}
-        
-        # Add timestamp if not provided
-        if "date" not in data:
-            data["date"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        # Render content
-        if template_file.suffix == '.html':
-            content = template.render(**data)
-            output_file = OUTPUT_DIR / f"{doc_id}.{request.output_format}"
-            
-            # For HTML, just save as is
-            if request.output_format == "html":
-                with open(output_file, 'w', encoding='utf-8') as f:
-                    f.write(content)
-            # For PDF, we'd normally use something like WeasyPrint or pdfkit here
-            # For simplicity, we'll just save as HTML for now
-            else:
-                with open(output_file, 'w', encoding='utf-8') as f:
-                    f.write(content)
-                
-                # In a real implementation, convert to PDF here
-                # This is a placeholder that would be replaced with actual PDF generation
-                logger.info(f"Would convert {output_file} to PDF")
-        
-        # Store document info
-        document_store[doc_id] = {
-            "path": str(output_file),
-            "content_type": f"application/{request.output_format}",
-            "created_at": datetime.utcnow()
-        }
-        
-        return GenerateResponse(
-            document_id=doc_id,
-            output_format=request.output_format,
-            download_url=f"/documents/{doc_id}/download",
-            timestamp=datetime.utcnow()
-        )
-        
-    except Exception as e:
-        logger.error(f"Error generating document: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/documents/{document_id}/download")
-async def download_document(document_id: str):
-    """Download a generated document"""
-    if document_id not in document_store:
-        raise HTTPException(status_code=404, detail="Document not found")
-    
-    doc = document_store[document_id]
-    if not os.path.exists(doc["path"]):
-        raise HTTPException(status_code=404, detail="Document file not found")
-    
-    return FileResponse(
-        doc["path"],
-        media_type=doc["content_type"],
-        filename=f"document{document_id}.{doc['content_type'].split('/')[-1]}"
-    )
-
-@app.get("/documents/{document_id}/preview")
-async def preview_document(document_id: str):
-    """Preview a generated document in the browser"""
-    if document_id not in document_store:
-        raise HTTPException(status_code=404, detail="Document not found")
-    
-    doc = document_store[document_id]
-    if not os.path.exists(doc["path"]):
-        raise HTTPException(status_code=404, detail="Document file not found")
-    
-    if doc["content_type"] == "application/pdf":
-        return FileResponse(doc["path"], media_type="application/pdf")
-    elif doc["content_type"] == "text/html":
-        with open(doc["path"], 'r', encoding='utf-8') as f:
-            return Response(content=f.read(), media_type="text/html")
-    else:
-        return FileResponse(doc["path"], media_type=doc["content_type"])
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-DOCS_MAIN
-
-    # Create LLM Engine service directory
-    mkdir -p "$ROOT_DIR/services/llm-engine/app"
-    
-    # Create LLM Engine requirements
-    cat > "$ROOT_DIR/services/llm-engine/requirements.txt" << 'LLM_REQ'
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-pydantic==2.5.0
-pydantic-settings==2.1.0
-httpx==0.25.2
-python-multipart==0.0.6
-python-dotenv==1.0.0
-python-json-logger==2.0.7
-python-dateutil==2.8.2
-numpy>=1.24.0
-pandas>=2.0.0
-scikit-learn>=1.3.0
-sentence-transformers>=2.2.2
-LLM_REQ
-
-    # Create LLM Engine main file
-    mkdir -p "$ROOT_DIR/services/llm-engine/app/agents"
-    
-    # Create LLM Engine main application
-    cat > "$ROOT_DIR/services/llm-engine/app/main.py" << 'LLM_MAIN'
-"""
-LLM Service - Complete FastAPI Implementation
-Multi-Agent Orchestration with Ollama Integration
-"""
-
-from fastapi import FastAPI, HTTPException, BackgroundTasks
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
-import logging
-from datetime import datetime
-import uuid
-import base64
-import httpx
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-# Initialize FastAPI app
-app = FastAPI(
-    title="LLM & Multi-Agent Service",
-    description="Ollama-based LLM service with multi-agent orchestration",
-    version="1.0.0",
-)
-
-# CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Ollama client
-class OllamaClient:
-    def __init__(self, base_url: str = "http://ollama:11434"):
-        self.base_url = base_url
-        self.client = httpx.AsyncClient()
-
-    async def generate(self, model: str, prompt: str, **kwargs):
-        try:
-            response = await self.client.post(
-                f"{self.base_url}/api/generate",
-                json={"model": model, "prompt": prompt, **kwargs},
-                timeout=60.0
-            )
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            logger.error(f"Error generating text: {str(e)}")
-            raise HTTPException(status_code=500, detail=str(e))
-
-# Initialize clients
-ollama_client = OllamaClient()
-
-# Models
-class LLMRequest(BaseModel):
-    prompt: str
-    model: str = "llama2"
-    max_tokens: int = 1000
-    temperature: float = 0.7
-
-class LLMResponse(BaseModel):
-    text: str
-    model: str
-    tokens_used: int
-
-# Routes
-@app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    try:
-        # Try to list models as a health check
-        async with httpx.AsyncClient() as client:
-            response = await client.get("http://ollama:11434/api/tags")
-            response.raise_for_status()
-            
-        return {
-            "status": "healthy",
-            "ollama_connected": True,
-            "timestamp": datetime.utcnow().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Health check failed: {str(e)}")
-        return {
-            "status": "unhealthy",
-            "ollama_connected": False,
-            "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
-        }
-
-@app.post("/generate", response_model=LLMResponse)
-async def generate_completion(request: LLMRequest):
-    """Generate LLM completion using Ollama"""
-    try:
-        result = await ollama_client.generate(
-            model=request.model,
-            prompt=request.prompt,
-            max_tokens=request.max_tokens,
-            temperature=request.temperature
-        )
-        
-        return LLMResponse(
-            text=result.get("response", ""),
-            model=request.model,
-            tokens_used=len(result.get("response", "").split())
-        )
-    except Exception as e:
-        logger.error(f"Error generating completion: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/models")
-async def list_models():
-    """List available Ollama models"""
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get("http://ollama:11434/api/tags")
-            response.raise_for_status()
-            return response.json()
-    except Exception as e:
-        logger.error(f"Error listing models: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-LLM_MAIN
-
-    # Create ElevenLabs service directory
-    mkdir -p "$ROOT_DIR/services/elevenlabs-service/app"
-    
-    # Create ElevenLabs requirements
-    cat > "$ROOT_DIR/services/elevenlabs-service/requirements.txt" << 'ELEVEN_REQ'
-fastapi>=0.95.0
-uvicorn[standard]>=0.21.0
-pydantic>=2.0.0
-python-multipart>=0.0.6
-python-dotenv>=1.0.0
-httpx>=0.24.0
-websockets>=11.0.0
-python-socketio>=5.8.0
-pydub>=0.25.1
-numpy>=1.24.0
-ELEVEN_REQ
-
-    # Create ElevenLabs main file
-    cat > "$ROOT_DIR/services/elevenlabs-service/app/main.py" << 'ELEVEN_MAIN'
-import asyncio
-import json
-import logging
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import Dict, List, Optional
-import httpx
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-app = FastAPI(
-    title="ElevenLabs Microservice",
-    description="Microservice for handling real-time audio streaming with ElevenLabs-like interface",
-    version="0.1.0"
-)
-
-# CORS middleware configuration
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Configuration
-class Config:
-    # Service URLs
-    STT_SERVICE_URL = "http://stt-service:8000/api/stt/transcribe"
-    TTS_SERVICE_URL = "http://tts-service:8000/api/tts/synthesize/base64"
-    LLM_SERVICE_URL = "http://llm-engine:8000/generate"
-    
-    # Audio configuration
-    SAMPLE_RATE = 16000
-    CHUNK_SIZE = 1024 * 4  # 4KB chunks
-    
-    # Timeouts in seconds
-    HTTP_TIMEOUT = 30.0
-    WEBSOCKET_TIMEOUT = 60.0
-    
-    # Voice settings
-    DEFAULT_VOICE_ID = "default_en_female"
-    DEFAULT_LANGUAGE = "en"
-
-# WebSocket connection manager
-class ConnectionManager:
-    def __init__(self):
-        self.active_connections: Dict[str, WebSocket] = {}
-        self.client_data: Dict[str, dict] = {}
-
-    async def connect(self, websocket: WebSocket, client_id: str):
-        await websocket.accept()
-        self.active_connections[client_id] = websocket
-        self.client_data[client_id] = {
-            "conversation": [],
-            "voice_settings": {
-                "voice_id": Config.DEFAULT_VOICE_ID,
-                "language": Config.DEFAULT_LANGUAGE
-            }
-        }
-        logger.info(f"Client connected: {client_id}")
-
-    def disconnect(self, client_id: str):
-        if client_id in self.active_connections:
-            del self.active_connections[client_id]
-            del self.client_data[client_id]
-            logger.info(f"Client disconnected: {client_id}")
-
-    async def send_message(self, client_id: str, message: dict):
-        if client_id in self.active_connections:
-            await self.active_connections[client_id].send_json(message)
-
-manager = ConnectionManager()
-
-# Pydantic models for request/response validation
-class AudioChunk(BaseModel):
-    audio: str
-    sample_rate: int = Config.SAMPLE_RATE
-
-class TextRequest(BaseModel):
-    text: str
-
-# WebSocket endpoint for real-time audio streaming
-@app.websocket("/ws/{client_id}")
-async def websocket_endpoint(websocket: WebSocket, client_id: str):
-    await manager.connect(websocket, client_id)
-    try:
-        while True:
-            try:
-                data = await asyncio.wait_for(
-                    websocket.receive_json(),
-                    timeout=Config.WEBSOCKET_TIMEOUT
-                )
-                
-                if "audio" in data:
-                    await process_audio_chunk(client_id, data["audio"])
-                elif "text" in data:
-                    await process_text_input(client_id, data["text"])
-                
-            except asyncio.TimeoutError:
-                # Send keep-alive ping
-                await websocket.send_json({"type": "ping", "timestamp": str(datetime.utcnow())})
-                
-    except WebSocketDisconnect:
-        manager.disconnect(client_id)
-    except Exception as e:
-        logger.error(f"WebSocket error: {str(e)}")
-        manager.disconnect(client_id)
-
-async def process_audio_chunk(client_id: str, audio_data: str):
-    """Process incoming audio chunk by sending to STT service."""
-    try:
-        # Send audio to STT service
-        async with httpx.AsyncClient(timeout=Config.HTTP_TIMEOUT) as client:
-            response = await client.post(
-                Config.STT_SERVICE_URL,
-                json={"audio": audio_data, "sample_rate": Config.SAMPLE_RATE}
-            )
-            response.raise_for_status()
-            result = response.json()
-            
-            if "text" in result and result["text"].strip():
-                # Process the transcribed text
-                await process_text_input(client_id, result["text"])
-                
-    except Exception as e:
-        logger.error(f"Error processing audio chunk: {str(e)}")
-        await manager.send_message(client_id, {
-            "type": "error",
-            "message": f"Error processing audio: {str(e)}"
-        })
-
-async def process_text_input(client_id: str, text: str):
-    """Process text input (for non-audio input)."""
-    try:
-        # Add to conversation history
-        manager.client_data[client_id]["conversation"].append({
-            "role": "user",
-            "content": text,
-            "timestamp": str(datetime.utcnow())
-        })
-        
-        # Get response from LLM
-        async with httpx.AsyncClient(timeout=Config.HTTP_TIMEOUT) as client:
-            response = await client.post(
-                Config.LLM_SERVICE_URL,
-                json={"prompt": text, "model": "llama2"}
-            )
-            response.raise_for_status()
-            llm_response = response.json()
-            
-            # Add response to conversation
-            manager.client_data[client_id]["conversation"].append({
-                "role": "assistant",
-                "content": llm_response.get("text", ""),
-                "timestamp": str(datetime.utcnow())
-            })
-            
-            # Convert response to speech
-            await convert_text_to_speech(client_id, llm_response.get("text", ""))
-            
-    except Exception as e:
-        logger.error(f"Error processing text input: {str(e)}")
-        await manager.send_message(client_id, {
-            "type": "error",
-            "message": f"Error processing text: {str(e)}"
-        })
-
-async def convert_text_to_speech(client_id: str, text: str):
-    """Convert text to speech using TTS service."""
-    try:
-        voice_settings = manager.client_data[client_id].get("voice_settings", {})
-        
-        async with httpx.AsyncClient(timeout=Config.HTTP_TIMEOUT) as client:
-            response = await client.post(
-                Config.TTS_SERVICE_URL,
-                json={
-                    "text": text,
-                    "voice_id": voice_settings.get("voice_id", Config.DEFAULT_VOICE_ID),
-                    "language": voice_settings.get("language", Config.DEFAULT_LANGUAGE)
-                }
-            )
-            response.raise_for_status()
-            result = response.json()
-            
-            # Send audio back to client
-            await manager.send_message(client_id, {
-                "type": "audio",
-                "audio": result.get("audio", ""),
-                "text": text
-            })
-            
-    except Exception as e:
-        logger.error(f"Error converting text to speech: {str(e)}")
-        await manager.send_message(client_id, {
-            "type": "error",
-            "message": f"Error generating speech: {str(e)}"
-        })
-
-# Health check endpoint
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy", "service": "elevenlabs-service"}
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-ELEVEN_MAIN
-
-    # Dockerfile for services
-    for svc in ocr asr stt tts voice_streaming docgen docsign rules documents llm-engine elevenlabs-service; do
-        mkdir -p "$ROOT_DIR/services/$svc"
-        cat > "$ROOT_DIR/services/$svc/Dockerfile" << 'EOT'
-FROM python:3.11-slim AS builder
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
-
-FROM python:3.11-slim
-WORKDIR /app
-COPY --from=builder /usr/local/lib/python3.11 /usr/local/lib/python3.11
-COPY . .
-RUN adduser --disabled-password appuser && chown -R appuser /app
-USER appuser
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
-EOT
-    done
-
-    # Special CPU-optimized Dockerfile for STT
-    mkdir -p "$ROOT_DIR/services/stt"
-    cat > "$ROOT_DIR/services/stt/Dockerfile.cpu" << 'EOT'
-FROM python:3.11-slim
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    ffmpeg \
-    libsndfile1 \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
-
-# Copy application code
-COPY . .
-
-# Create models directory
-RUN mkdir -p /root/.cache/whisper
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
-
-# Run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
-EOT
-
-    # Create documents service directory
-    mkdir -p "$ROOT_DIR/services/documents"
-    
-    # Create documents service requirements
-    cat > "$ROOT_DIR/services/documents/requirements.txt" << 'DOCS_REQ'
-fastapi>=0.95.0
-uvicorn[standard]>=0.21.0
-pydantic>=2.0.0
-python-multipart>=0.0.6
-PyYAML>=6.0
-Jinja2>=3.0.0
-docxtpl>=0.16.0
-openpyxl>=3.0.0
-pandas>=2.0.0
-PyPDF2>=3.0.0
-pikepdf>=8.0.0
-Pillow>=10.0.0
-qrcode>=7.0
-DOCS_REQ
-
-    # Create documents service Dockerfile
-    cat > "$ROOT_DIR/services/documents/Dockerfile" << 'DOCS_DOCKER'
-FROM python:3.11-slim
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    ffmpeg \
-    libsndfile1 \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
-
-# Copy application code
-COPY . .
-
-# Create non-root user
-RUN adduser --disabled-password appuser && chown -R appuser /app
-USER appuser
-
-# Create required directories
-RUN mkdir -p /app/templates /app/output
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
-
-# Run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
-DOCS_DOCKER
-
-    # Create sample template
-    mkdir -p "$ROOT_DIR/services/documents/templates"
-    cat > "$ROOT_DIR/services/documents/templates/sample_template.html" << 'SAMPLE_TPL'
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Document</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 40px; }
-        .header { text-align: center; margin-bottom: 30px; }
-        .content { margin: 20px 0; }
-        .footer { margin-top: 50px; font-size: 0.8em; text-align: center; }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>{{ title }}</h1>
-        <p>Generated on {{ date }}</p>
-    </div>
-    
-    <div class="content">
-        <h2>Document Details</h2>
-        <p><strong>Reference:</strong> {{ reference }}</p>
-        <p><strong>Status:</strong> {{ status }}</p>
-        
-        <h3>Content</h3>
-        <p>{{ content }}</p>
-        
-        {% if items %}
-        <h3>Items</h3>
-        <ul>
-            {% for item in items %}
-            <li>{{ item.name }} - {{ item.value }}</li>
-            {% endfor %}
-        </ul>
-        {% endif %}
-    </div>
-    
-    <div class="footer">
-        <p>This is a sample document generated by the Document Service</p>
-    </div>
-</body>
-</html>
-SAMPLE_TPL
-
-    # Create main.py for the documents service
-    cat > "$ROOT_DIR/services/documents/main.py" << 'DOCS_MAIN'
-from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks, Body
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel
-from typing import Optional, List, Dict, Any, Union
-import yaml
-import json
-import logging
-from datetime import datetime
-import os
-from pathlib import Path
-import uuid
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-app = FastAPI(
-    title="Document Generation Service",
-    description="API for generating documents from templates",
-    version="1.0.0"
-)
-
-# CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Ensure required directories exist
-TEMPLATES_DIR = Path("templates")
-OUTPUT_DIR = Path("output")
-TEMPLATES_DIR.mkdir(exist_ok=True)
-OUTPUT_DIR.mkdir(exist_ok=True)
-
-class HealthCheckResponse(BaseModel):
-    status: str
-    version: str
-    timestamp: str
-
-class DocumentRequest(BaseModel):
-    template_name: str
-    data: Dict[str, Any]
-    output_format: str = "pdf"
-    output_filename: Optional[str] = None
-
-@app.get("/health")
-async def health_check():
-    return HealthCheckResponse(
-        status="healthy",
-        version="1.0.0",
-        timestamp=datetime.utcnow().isoformat()
-    )
-
-@app.post("/generate")
-async def generate_document(request: DocumentRequest):
-    """Generate a document from a template"""
-    try:
-        template_path = TEMPLATES_DIR / request.template_name
-        if not template_path.exists():
-            raise HTTPException(status_code=404, detail="Template not found")
-        
-        # Generate a unique filename
-        output_filename = request.output_filename or f"document_{uuid.uuid4().hex}"
-        output_path = OUTPUT_DIR / f"{output_filename}.{request.output_format}"
-        
-        # In a real implementation, you would render the template here
-        # For now, we'll just create a simple file
-        with open(output_path, 'w') as f:
-            f.write(f"Generated document from template: {request.template_name}\n")
-            f.write(f"Data: {json.dumps(request.data, indent=2)}\n")
-        
-        return {
-            "status": "success",
-            "document_id": output_filename,
-            "download_url": f"/download/{output_filename}.{request.output_format}"
-        }
-    except Exception as e:
-        logger.error(f"Error generating document: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/download/{filename}")
-async def download_document(filename: str):
-    """Download a generated document"""
-    file_path = OUTPUT_DIR / filename
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="File not found")
-    return FileResponse(file_path)
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-DOCS_MAIN
-
-    # Gateway files
-    mkdir -p "$ROOT_DIR/services/gateway"
-    cat > "$ROOT_DIR/services/gateway/nginx.conf" << 'EOT'
-worker_processes 1;
-events { worker_connections 1024; }
-http {
-  server {
-    listen 80;
-    location /health { return 200 'ok'; }
-    location /auth { proxy_pass http://auth-service:8001; }
-    location /api/links { proxy_pass http://links-service:8002; }
-    location /s { proxy_pass http://links-service:8002; }
-    location /api/messaging { proxy_pass http://messaging-service:8003; }
-    location /api/push { proxy_pass http://push-service:8004; }
-    location /ai/ocr { proxy_pass http://ocr-service:8001; }
-    location /ai/asr { proxy_pass http://asr-service:8002; }
-    location /ai/tts { proxy_pass http://tts-service:8003; }
-    location /ai/voice { proxy_pass http://voice-service:8004; }
-    location /ai/docgen { proxy_pass http://docgen-service:8005; }
-    location /ai/docsign { proxy_pass http://docsign-service:8006; }
-    location /ai/rules { proxy_pass http://rules-service:8007; }
-    location /ai/documents { proxy_pass http://documents-service:8008; }
-    location /pwa { proxy_pass http://pwa:80; }
-  }
+    echo -e "${GREEN}✓ Full STT service files written${NC}"
 }
-EOT
 
-    cat > "$ROOT_DIR/services/gateway/Dockerfile" << 'EOT'
-FROM nginx:alpine
-COPY nginx.conf /etc/nginx/nginx.conf
-EOT
+# -------------------------------------
+# DocSign service: overlay signature onto PDF
+# CPU-focused; uses ReportLab + PyPDF2 + Pillow
+# -------------------------------------
+create_docsign_service() {
+    echo -e "${YELLOW}Creating DocSign service (PDF signing overlay)...${NC}"
+    mkdir -p "$ROOT_DIR/services/docsign"
+    _safe_write "$ROOT_DIR/services/docsign/requirements.txt" <<'REQ'
+fastapi>=0.95.0
+uvicorn[standard]>=0.21.0
+python-multipart>=0.0.6
+Pillow>=9.5.0
+reportlab>=4.1.0
+PyPDF2>=3.0.0
+python-dotenv>=1.0.0
+REQ
 
-    mkdir -p "$ROOT_DIR/services/pwa"
-    cat > "$ROOT_DIR/services/pwa/index.html" << 'EOT'
-<!doctype html><html><head><title>PWA</title></head><body><h1>PWA</h1><button id="enable">Enable Push</button><script>if('serviceWorker'in navigator){navigator.serviceWorker.register('/sw.js')}document.getElementById('enable').onclick=async()=>{const reg=await navigator.serviceWorker.ready;const res=await fetch('/api/push/vapid/public-key');const {publicKey}=await res.json();const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:Uint8Array.from(atob(publicKey.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0))});await fetch('/api/push/subscribe',{method:'POST',headers:{'Content-Type':'application/json'},body: JSON.stringify(sub)});alert('Device registered for push.');};</script></body></html>
-EOT
+    _safe_write "$ROOT_DIR/services/docsign/Dockerfile" <<'DFDOCSIGN'
+# DocSign Dockerfile (CPU-only)
+FROM python:3.11-slim
 
-    cat > "$ROOT_DIR/services/pwa/sw.js" << 'EOT'
-self.addEventListener('push',event=>{const d=event.data?event.data.text():'Hello';event.waitUntil(self.registration.showNotification('PWA',{body:d}))});
-EOT
+ENV DEBIAN_FRONTEND=noninteractive
 
-    cat > "$ROOT_DIR/services/pwa/Dockerfile" << 'EOT'
-FROM nginx:alpine
-COPY index.html /usr/share/nginx/html/index.html
-COPY sw.js /usr/share/nginx/html/sw.js
-EOT
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libjpeg-dev \
+    zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-    # Create sample templates and flows
-    create_sample_files() {
-        echo -e "${YELLOW}Creating sample files...${NC}"
-        
-        # Sample Word template for DocGen
-        mkdir -p "$ROOT_DIR/services/docgen/templates"
-        cat > "$ROOT_DIR/services/docgen/templates/loan_offer.docx" << 'EOT'
-# Loan Agreement
+WORKDIR /app
 
-This agreement is made between [Your Company] and {{customer_name}}.
+COPY requirements.txt .
+RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
-Loan Amount: {{loan_amount}}
-Interest Rate: {{interest_rate}}%
-Date: {{date}}
+COPY . .
 
-[Additional terms and conditions...]
-EOT
+RUN adduser --disabled-password --gecos "" appuser && chown -R appuser /app
+USER appuser
 
-        # Sample signing flow for DocSign
-        mkdir -p "$ROOT_DIR/services/docsign/flows"
-        cat > "$ROOT_DIR/services/docsign/flows/sample_flow.json" << 'EOT'
-{
-  "flow_id": "contract_123",
-  "status": "in_progress",
-  "document": "loan_agreement.pdf",
-  "signers": [
-    {
-      "name": "Alice",
-      "email": "alice@example.com",
-      "department": "Legal",
-      "signed": true,
-      "timestamp": "2025-12-03T10:00:00Z"
-    },
-    {
-      "name": "Bob",
-      "email": "bob@example.com",
-      "department": "Finance",
-      "signed": false
+EXPOSE 8000
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+DFDOCSIGN
+
+    _safe_write "$ROOT_DIR/services/docsign/main.py" <<'PYDOCSIGN'
+"""
+DocSign Service (CPU)
+ - POST /sign  multipart form:
+     - file: the PDF to sign
+     - name: signatory name (optional)
+     - signature: optional image (png/jpg). If omitted, service creates a text-signature image.
+ - GET  /health
+ - GET  /signed/{filename}  to download signed PDFs from output dir
+
+Implementation notes:
+ - Uses ReportLab to create a PDF "overlay" containing the signature image positioned
+   at bottom-right of the last page. Then merges that overlay onto the last page
+   using PyPDF2's merge_page.
+ - All operations are CPU-friendly.
+"""
+
+import os
+import io
+import uuid
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi.responses import FileResponse
+from PIL import Image, ImageDraw, ImageFont
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import letter
+from PyPDF2 import PdfReader, PdfWriter
+from pathlib import Path
+
+app = FastAPI(title="DocSign Service (CPU)")
+
+BASE = Path(__file__).resolve().parent
+OUTPUT = BASE / "output"
+OUTPUT.mkdir(exist_ok=True)
+
+@app.get("/health")
+async def health():
+    return {"status": "healthy", "signed_count": len(list(OUTPUT.glob("*.pdf")))}
+
+def create_signature_image(name: str, width=600, height=150):
+    """
+    Create a simple signature-like image: white background, handwriting-style text.
+    For better signatures, user can upload an image.
+    """
+    img = Image.new("RGBA", (width, height), (255,255,255,0))
+    draw = ImageDraw.Draw(img)
+    try:
+        # Try to use a nicer font if available
+        font = ImageFont.truetype("DejaVuSans.ttf", 48)
+    except Exception:
+        font = ImageFont.load_default()
+    text = name or "Signer"
+    # center text vertically and horizontally biased to the right (like a signature)
+    w, h = draw.textsize(text, font=font)
+    x = max(10, width - w - 20)
+    y = (height - h) // 2
+    draw.text((x, y), text, fill=(10,10,10,255), font=font)
+    # add a small flourish: a line under the text
+    draw.line((x, y + h + 6, width - 10, y + h + 6), fill=(10,10,10,120), width=2)
+    return img
+
+def create_overlay_pdf(signature_img: Image.Image, page_width: float, page_height: float, sig_w: int=200, sig_h: int=80, margin=36):
+    """
+    Create an in-memory PDF overlay with signature image positioned at bottom-right.
+    page_width/page_height are in points (1 point = 1/72 inch)
+    """
+    packet = io.BytesIO()
+    c = canvas.Canvas(packet, pagesize=(page_width, page_height))
+    # position signature at bottom-right with margin
+    sig_x = page_width - sig_w - margin
+    sig_y = margin
+    # save PIL image to bytes as PNG for ReportLab
+    img_bytes = io.BytesIO()
+    signature_img.save(img_bytes, format="PNG")
+    img_bytes.seek(0)
+    c.drawImage(ImageReader(img_bytes), sig_x, sig_y, width=sig_w, height=sig_h, mask='auto')
+    c.save()
+    packet.seek(0)
+    return packet
+
+# small helper to make reportlab accept PIL image bytes
+from reportlab.lib.utils import ImageReader
+
+@app.post("/sign")
+async def sign_pdf(file: UploadFile = File(...), name: str = Form(None), signature: UploadFile = File(None)):
+    # verify uploaded pdf
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+
+    pdf_bytes = await file.read()
+    try:
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid PDF: {e}")
+
+    # prepare signature image
+    if signature:
+        sig_bytes = await signature.read()
+        sig_img = Image.open(io.BytesIO(sig_bytes)).convert("RGBA")
+    else:
+        sig_img = create_signature_image(name or "Signer", width=400, height=120)
+
+    # Get last page size (points)
+    last_page = reader.pages[-1]
+    media = last_page.mediabox
+    # PyPDF2 uses Decimal for coordinates; convert to float
+    page_width = float(media.width)
+    page_height = float(media.height)
+
+    # scale signature image to a reasonable size relative to page
+    target_sig_w = min( int(page_width * 0.35), 500 )
+    target_sig_h = int(target_sig_w * (sig_img.height / sig_img.width))
+    sig_img = sig_img.resize((target_sig_w, target_sig_h), Image.ANTIALIAS)
+
+    overlay_pdf_stream = create_overlay_pdf(sig_img, page_width, page_height, sig_w=target_sig_w, sig_h=target_sig_h)
+
+    # merge overlay onto last page
+    overlay_reader = PdfReader(overlay_pdf_stream)
+    overlay_page = overlay_reader.pages[0]
+
+    writer = PdfWriter()
+    for i, p in enumerate(reader.pages):
+        if i == len(reader.pages) - 1:
+            # merge overlay_page onto p
+            p.merge_page(overlay_page)
+        writer.add_page(p)
+
+    # write out signed PDF
+    out_name = f"signed_{uuid.uuid4().hex}.pdf"
+    out_path = OUTPUT / out_name
+    with open(out_path, "wb") as f:
+        writer.write(f)
+
+    return {"signed_file": f"/signed/{out_name}", "path": str(out_path)}
+
+@app.get("/signed/{filename}")
+async def get_signed(filename: str):
+    path = OUTPUT / filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Not found")
+    return FileResponse(path, media_type="application/pdf", filename=filename)
+PYDOCSIGN
+
+    echo -e "${GREEN}✓ DocSign service files written${NC}"
+}
+
+# --------------------------
+# docker-compose override (adds/updates docsign and full stt)
+# --------------------------
+create_docker_compose_override() {
+    echo -e "${YELLOW}Writing docker-compose.override.yml (adds docsign + tuned stt)...${NC}"
+    _safe_write "$ROOT_DIR/docker-compose.override.yml" <<'YAML'
+version: '3.9'
+services:
+  stt-service:
+    build:
+      context: ./services/stt
+      dockerfile: Dockerfile
+    container_name: stt-service
+    ports:
+      - "8011:8000"
+    environment:
+      - MODEL_PATH=/root/.cache/models
+      - STT_MODEL=openai/whisper-tiny
+    volumes:
+      - ./services/stt/models:/root/.cache/models
+
+  docsign:
+    build:
+      context: ./services/docsign
+      dockerfile: Dockerfile
+    container_name: docsign
+    ports:
+      - "8012:8000"
+    volumes:
+      - ./services/docsign/output:/app/output
+YAML
+    echo -e "${GREEN}✓ docker-compose.override.yml written${NC}"
+}
+
+# --------------------------
+# Register new actions in menu (optional)
+# --------------------------
+register_block2_menu_actions() {
+    # This appends convenience functions to the running shell session if user wants to call them manually.
+    echo -e "${YELLOW}Registering Block2 convenience functions...${NC}"
+    echo -e "${BLUE}To create full STT and DocSign services, run:${NC}"
+    echo "  ./all-in-one.sh (option 1) OR call these functions in a shell where _safe_write exists:"
+    echo "  create_stt_full"
+    echo "  create_docsign_service"
+    echo "  create_docker_compose_override"
+    echo -e "${YELLOW}If you re-run menu option 1 (Setup project), these files will be created automatically.${NC}"
+}
+
+# --------------------------
+# Execute creation right away if user has already run setup (idempotent)
+# --------------------------
+# If services folders already exist from Block 1, we still overwrite with improved files.
+create_stt_full
+create_docsign_service
+create_docker_compose_override
+register_block2_menu_actions
+
+echo -e "${GREEN}Block 2 created: full STT (CPU) and DocSign services.${NC}"
+echo -e "${YELLOW}Next steps:${NC}"
+echo "  1) docker-compose build stt-service docsign --pull"
+echo "  2) docker-compose up -d stt-service docsign"
+echo ""
+echo "Health endpoints:"
+echo "  STT:   http://localhost:8011/health"
+echo "  DocSign: http://localhost:8012/health"
+echo ""
+echo "Test DocSign:"
+echo "  curl -X POST http://localhost:8012/sign -F \"file=@/path/to/input.pdf\" -F \"name=Alice\" -o /dev/null && echo 'done'"
+# ==============================================================================
+# ALL-IN-ONE: AI Platform Superstack — FULL STT (CPU) + DocSign (Block 2/...)
+#
+# Paste this directly after Block 1 in your `all-in-one.sh` file.
+# This block:
+#  - Replaces the lightweight STT skeleton with a CPU-optimized, production-like
+#    STT service (Whisper via transformers + torchaudio) configured for CPU-only.
+#  - Adds a DocSign service that accepts a PDF and a signature (image or text),
+#    then overlays the signature onto the last page and returns the signed PDF.
+#  - Writes docker-compose.override.yml so you don't lose the cleaned compose.
+#
+# IMPORTANT:
+#  - These services will build locally and may take time due to wheel compilation.
+#    To speed builds, prefer installing prebuilt wheels for torch/torchaudio (see README).
+#  - All model usage is CPU-only (explicit device set to "cpu"). No GPU bits or CUDA.
+# ==============================================================================
+
+# -------- Helper: ensure _safe_write exists (from Block 1) ----------
+if ! declare -f _safe_write >/dev/null 2>&1; then
+  echo -e "${RED}Error:${NC} _safe_write helper not found. Make sure you pasted Block 1 before Block 2."
+  exit 1
+fi
+
+# -------------------------------
+# Full STT implementation (CPU)
+# -------------------------------
+create_stt_full() {
+    echo -e "${YELLOW}Creating full STT service (CPU-only)...${NC}"
+    mkdir -p "$ROOT_DIR/services/stt"
+    # requirements: recommend CPU-specific torch wheels if possible
+    _safe_write "$ROOT_DIR/services/stt/requirements.txt" <<'REQ'
+fastapi>=0.95.0
+uvicorn[standard]>=0.21.0
+python-multipart>=0.0.6
+transformers>=4.30.0
+torchaudio>=2.2.2
+torch>=2.2.2
+soundfile>=0.12.1
+numpy>=1.24.0
+python-dotenv>=1.0.0
+pydantic>=2.0
+REQ
+
+    # CPU-only optimized Dockerfile: uses manylinux CPU wheel index hint (user may override)
+    _safe_write "$ROOT_DIR/services/stt/Dockerfile" <<'DFSTT'
+# STT service Dockerfile (CPU-only optimized)
+FROM python:3.11-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system deps needed for audio processing and torch wheels
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    ffmpeg \
+    libsndfile1 \
+    libjpeg-dev \
+    zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy requirements and install
+COPY requirements.txt .
+
+# NOTE: If you have a faster way to install CPU wheels (like a local wheelcache),
+# edit the requirements or run pip with --find-links to a wheel index.
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copy application
+COPY . .
+
+# Create a non-root user to run the app
+RUN adduser --disabled-password --gecos "" appuser && chown -R appuser /app
+USER appuser
+
+EXPOSE 8000
+
+# Run uvicorn
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+DFSTT
+
+    # Main STT app: CPU-only whisper using transformers + torchaudio
+    _safe_write "$ROOT_DIR/services/stt/main.py" <<'PYSTT_MAIN'
+"""
+STT Service (CPU-only)
+
+Endpoints:
+ - GET  /health
+ - POST /api/stt/transcribe  (multipart form 'file' or JSON { "audio_base64": "...", "filename": "..." })
+
+Behavior:
+ - Loads a small Whisper model by default (openai/whisper-tiny).
+ - Forces device to CPU. No CUDA usage.
+ - Uses torchaudio to read audio buffers and resamples to 16kHz.
+ - Returns plain text transcription.
+
+Notes:
+ - This is designed for CPU-only environments. Use a small model for reasonable latency.
+ - For production, consider model caching and background downloads.
+"""
+
+import os
+import io
+import base64
+import logging
+from typing import Optional
+from fastapi import FastAPI, UploadFile, File, HTTPException, status
+from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
+
+# optional heavy imports
+try:
+    import torch
+    import torchaudio
+    from transformers import WhisperProcessor, WhisperForConditionalGeneration
+except Exception as e:
+    torch = None
+    torchaudio = None
+    WhisperProcessor = None
+    WhisperForConditionalGeneration = None
+    IMPORT_ERROR = str(e)
+else:
+    IMPORT_ERROR = None
+
+app = FastAPI(title="STT Service (CPU)")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
+
+logger = logging.getLogger("stt")
+logging.basicConfig(level=logging.INFO)
+
+MODEL = None
+PROCESSOR = None
+MODEL_NAME = os.getenv("STT_MODEL", os.getenv("STT_MODEL_NAME", "openai/whisper-tiny"))
+MODEL_CACHE = os.getenv("MODEL_PATH", "/root/.cache/models")
+DEVICE = torch.device("cpu") if torch else None
+
+class Base64Payload(BaseModel):
+    audio_base64: str
+    filename: Optional[str] = "upload.wav"
+    language: Optional[str] = "en"
+
+@app.on_event("startup")
+def load_model():
+    global MODEL, PROCESSOR
+    if IMPORT_ERROR:
+        logger.warning("Model libraries not available: %s", IMPORT_ERROR)
+        return
+
+    try:
+        logger.info("Loading model '%s' into device '%s' (cache=%s)", MODEL_NAME, DEVICE, MODEL_CACHE)
+        # load processor + model, forcing CPU (torch device will be cpu)
+        PROCESSOR = WhisperProcessor.from_pretrained(MODEL_NAME, cache_dir=MODEL_CACHE)
+        MODEL = WhisperForConditionalGeneration.from_pretrained(MODEL_NAME, cache_dir=MODEL_CACHE)
+        if torch:
+            MODEL.to(DEVICE)
+        logger.info("Model loaded successfully")
+    except Exception as e:
+        logger.exception("Failed to load model: %s", e)
+        MODEL = None
+        PROCESSOR = None
+
+@app.get("/health")
+async def health():
+    return {
+        "status": "healthy" if MODEL is not None and PROCESSOR is not None else "model not loaded",
+        "model": MODEL_NAME,
+        "import_error": IMPORT_ERROR or ""
     }
+
+def read_audio_bytes(audio_bytes: bytes):
+    """Load audio bytes to waveform (tensor) and sample rate using torchaudio"""
+    if torchaudio is None:
+        raise RuntimeError("torchaudio not available")
+    bio = io.BytesIO(audio_bytes)
+    waveform, sr = torchaudio.load(bio)
+    # convert to mono
+    if waveform.dim() > 1 and waveform.size(0) > 1:
+        waveform = waveform.mean(dim=0, keepdim=True)
+    # resample to 16000 if needed
+    if sr != 16000:
+        resampler = torchaudio.transforms.Resample(orig_freq=sr, new_freq=16000)
+        waveform = resampler(waveform)
+        sr = 16000
+    return waveform.squeeze(0).numpy(), sr
+
+@app.post("/api/stt/transcribe")
+async def transcribe(file: UploadFile = File(None), payload: Base64Payload = None, language: str = "en"):
+    """
+    Accepts either:
+     - multipart 'file'
+     - JSON body with base64 audio (POST with JSON)
+    Returns: {"transcription": "..."}
+    """
+    if IMPORT_ERROR:
+        raise HTTPException(status_code=503, detail=f"Missing dependencies: {IMPORT_ERROR}")
+
+    if MODEL is None or PROCESSOR is None:
+        raise HTTPException(status_code=503, detail="Model not loaded")
+
+    audio_bytes = None
+    try:
+        if file:
+            audio_bytes = await file.read()
+        elif payload and payload.audio_base64:
+            audio_bytes = base64.b64decode(payload.audio_base64)
+        else:
+            raise HTTPException(status_code=400, detail="No audio provided")
+
+        waveform_np, sr = read_audio_bytes(audio_bytes)
+
+        # Prepare features
+        inputs = PROCESSOR(waveform_np, sampling_rate=sr, return_tensors="pt")
+        # Ensure tensors on CPU
+        inputs = {k: v.to(DEVICE) for k, v in inputs.items()}
+
+        # Generate
+        with torch.no_grad():
+            predicted_ids = MODEL.generate(**inputs)
+        transcription = PROCESSOR.batch_decode(predicted_ids, skip_special_tokens=True)[0]
+
+        return {"transcription": transcription, "language": language}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Transcription failure")
+        raise HTTPException(status_code=500, detail=str(e))
+PYSTT_MAIN
+
+    echo -e "${GREEN}✓ Full STT service files written${NC}"
+}
+
+# -------------------------------------
+# DocSign service: overlay signature onto PDF
+# CPU-focused; uses ReportLab + PyPDF2 + Pillow
+# -------------------------------------
+create_docsign_service() {
+    echo -e "${YELLOW}Creating DocSign service (PDF signing overlay)...${NC}"
+    mkdir -p "$ROOT_DIR/services/docsign"
+    _safe_write "$ROOT_DIR/services/docsign/requirements.txt" <<'REQ'
+fastapi>=0.95.0
+uvicorn[standard]>=0.21.0
+python-multipart>=0.0.6
+Pillow>=9.5.0
+reportlab>=4.1.0
+PyPDF2>=3.0.0
+python-dotenv>=1.0.0
+REQ
+
+    _safe_write "$ROOT_DIR/services/docsign/Dockerfile" <<'DFDOCSIGN'
+# DocSign Dockerfile (CPU-only)
+FROM python:3.11-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libjpeg-dev \
+    zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+RUN adduser --disabled-password --gecos "" appuser && chown -R appuser /app
+USER appuser
+
+EXPOSE 8000
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+DFDOCSIGN
+
+    _safe_write "$ROOT_DIR/services/docsign/main.py" <<'PYDOCSIGN'
+"""
+DocSign Service (CPU)
+ - POST /sign  multipart form:
+     - file: the PDF to sign
+     - name: signatory name (optional)
+     - signature: optional image (png/jpg). If omitted, service creates a text-signature image.
+ - GET  /health
+ - GET  /signed/{filename}  to download signed PDFs from output dir
+
+Implementation notes:
+ - Uses ReportLab to create a PDF "overlay" containing the signature image positioned
+   at bottom-right of the last page. Then merges that overlay onto the last page
+   using PyPDF2's merge_page.
+ - All operations are CPU-friendly.
+"""
+
+import os
+import io
+import uuid
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi.responses import FileResponse
+from PIL import Image, ImageDraw, ImageFont
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import letter
+from PyPDF2 import PdfReader, PdfWriter
+from pathlib import Path
+
+app = FastAPI(title="DocSign Service (CPU)")
+
+BASE = Path(__file__).resolve().parent
+OUTPUT = BASE / "output"
+OUTPUT.mkdir(exist_ok=True)
+
+@app.get("/health")
+async def health():
+    return {"status": "healthy", "signed_count": len(list(OUTPUT.glob("*.pdf")))}
+
+def create_signature_image(name: str, width=600, height=150):
+    """
+    Create a simple signature-like image: white background, handwriting-style text.
+    For better signatures, user can upload an image.
+    """
+    img = Image.new("RGBA", (width, height), (255,255,255,0))
+    draw = ImageDraw.Draw(img)
+    try:
+        # Try to use a nicer font if available
+        font = ImageFont.truetype("DejaVuSans.ttf", 48)
+    except Exception:
+        font = ImageFont.load_default()
+    text = name or "Signer"
+    # center text vertically and horizontally biased to the right (like a signature)
+    w, h = draw.textsize(text, font=font)
+    x = max(10, width - w - 20)
+    y = (height - h) // 2
+    draw.text((x, y), text, fill=(10,10,10,255), font=font)
+    # add a small flourish: a line under the text
+    draw.line((x, y + h + 6, width - 10, y + h + 6), fill=(10,10,10,120), width=2)
+    return img
+
+def create_overlay_pdf(signature_img: Image.Image, page_width: float, page_height: float, sig_w: int=200, sig_h: int=80, margin=36):
+    """
+    Create an in-memory PDF overlay with signature image positioned at bottom-right.
+    page_width/page_height are in points (1 point = 1/72 inch)
+    """
+    packet = io.BytesIO()
+    c = canvas.Canvas(packet, pagesize=(page_width, page_height))
+    # position signature at bottom-right with margin
+    sig_x = page_width - sig_w - margin
+    sig_y = margin
+    # save PIL image to bytes as PNG for ReportLab
+    img_bytes = io.BytesIO()
+    signature_img.save(img_bytes, format="PNG")
+    img_bytes.seek(0)
+    c.drawImage(ImageReader(img_bytes), sig_x, sig_y, width=sig_w, height=sig_h, mask='auto')
+    c.save()
+    packet.seek(0)
+    return packet
+
+# small helper to make reportlab accept PIL image bytes
+from reportlab.lib.utils import ImageReader
+
+@app.post("/sign")
+async def sign_pdf(file: UploadFile = File(...), name: str = Form(None), signature: UploadFile = File(None)):
+    # verify uploaded pdf
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+
+    pdf_bytes = await file.read()
+    try:
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid PDF: {e}")
+
+    # prepare signature image
+    if signature:
+        sig_bytes = await signature.read()
+        sig_img = Image.open(io.BytesIO(sig_bytes)).convert("RGBA")
+    else:
+        sig_img = create_signature_image(name or "Signer", width=400, height=120)
+
+    # Get last page size (points)
+    last_page = reader.pages[-1]
+    media = last_page.mediabox
+    # PyPDF2 uses Decimal for coordinates; convert to float
+    page_width = float(media.width)
+    page_height = float(media.height)
+
+    # scale signature image to a reasonable size relative to page
+    target_sig_w = min( int(page_width * 0.35), 500 )
+    target_sig_h = int(target_sig_w * (sig_img.height / sig_img.width))
+    sig_img = sig_img.resize((target_sig_w, target_sig_h), Image.ANTIALIAS)
+
+    overlay_pdf_stream = create_overlay_pdf(sig_img, page_width, page_height, sig_w=target_sig_w, sig_h=target_sig_h)
+
+    # merge overlay onto last page
+    overlay_reader = PdfReader(overlay_pdf_stream)
+    overlay_page = overlay_reader.pages[0]
+
+    writer = PdfWriter()
+    for i, p in enumerate(reader.pages):
+        if i == len(reader.pages) - 1:
+            # merge overlay_page onto p
+            p.merge_page(overlay_page)
+        writer.add_page(p)
+
+    # write out signed PDF
+    out_name = f"signed_{uuid.uuid4().hex}.pdf"
+    out_path = OUTPUT / out_name
+    with open(out_path, "wb") as f:
+        writer.write(f)
+
+    return {"signed_file": f"/signed/{out_name}", "path": str(out_path)}
+
+@app.get("/signed/{filename}")
+async def get_signed(filename: str):
+    path = OUTPUT / filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Not found")
+    return FileResponse(path, media_type="application/pdf", filename=filename)
+PYDOCSIGN
+
+    echo -e "${GREEN}✓ DocSign service files written${NC}"
+}
+
+# --------------------------
+# docker-compose override (adds/updates docsign and full stt)
+# --------------------------
+create_docker_compose_override() {
+    echo -e "${YELLOW}Writing docker-compose.override.yml (adds docsign + tuned stt)...${NC}"
+    _safe_write "$ROOT_DIR/docker-compose.override.yml" <<'YAML'
+version: '3.9'
+services:
+  stt-service:
+    build:
+      context: ./services/stt
+      dockerfile: Dockerfile
+    container_name: stt-service
+    ports:
+      - "8011:8000"
+    environment:
+      - MODEL_PATH=/root/.cache/models
+      - STT_MODEL=openai/whisper-tiny
+    volumes:
+      - ./services/stt/models:/root/.cache/models
+
+  docsign:
+    build:
+      context: ./services/docsign
+      dockerfile: Dockerfile
+    container_name: docsign
+    ports:
+      - "8012:8000"
+    volumes:
+      - ./services/docsign/output:/app/output
+YAML
+    echo -e "${GREEN}✓ docker-compose.override.yml written${NC}"
+}
+
+# --------------------------
+# Register new actions in menu (optional)
+# --------------------------
+register_block2_menu_actions() {
+    # This appends convenience functions to the running shell session if user wants to call them manually.
+    echo -e "${YELLOW}Registering Block2 convenience functions...${NC}"
+    echo -e "${BLUE}To create full STT and DocSign services, run:${NC}"
+    echo "  ./all-in-one.sh (option 1) OR call these functions in a shell where _safe_write exists:"
+    echo "  create_stt_full"
+    echo "  create_docsign_service"
+    echo "  create_docker_compose_override"
+    echo -e "${YELLOW}If you re-run menu option 1 (Setup project), these files will be created automatically.${NC}"
+}
+
+# --------------------------
+# Execute creation right away if user has already run setup (idempotent)
+# --------------------------
+# If services folders already exist from Block 1, we still overwrite with improved files.
+create_stt_full
+create_docsign_service
+create_docker_compose_override
+register_block2_menu_actions
+
+echo -e "${GREEN}Block 2 created: full STT (CPU) and DocSign services.${NC}"
+echo -e "${YELLOW}Next steps:${NC}"
+echo "  1) docker-compose build stt-service docsign --pull"
+echo "  2) docker-compose up -d stt-service docsign"
+echo ""
+echo "Health endpoints:"
+echo "  STT:   http://localhost:8011/health"
+echo "  DocSign: http://localhost:8012/health"
+echo ""
+echo "Test DocSign:"
+echo "  curl -X POST http://localhost:8012/sign -F \"file=@/path/to/input.pdf\" -F \"name=Alice\" -o /dev/null && echo 'done'"
+# ==============================================================================
+# ALL-IN-ONE: AI Platform Superstack — BLOCK 3
+# Adds:
+#   - Complete DocSign Workflow Engine
+#   - OTP system (email/SMS/webhook-pluggable)
+#   - Sequential Signer logic
+#   - Workflow storage (JSON files)
+#   - Signing UI microservice skeleton
+# ==============================================================================
+
+create_docsign_workflow_extensions() {
+    echo -e "${YELLOW}Extending DocSign service with workflow, OTP, and routing...${NC}"
+
+    # ---------------------------------------------------------------------
+    # 1. Workflow storage
+    #    Located under services/docsign/workflows/<workflow_id>.json
+    # ---------------------------------------------------------------------
+    mkdir -p "$ROOT_DIR/services/docsign/workflows"
+    mkdir -p "$ROOT_DIR/services/docsign/audit"
+
+    # ---------------------------------------------------------------------
+    # 2. Update DocSign requirements (add workflow + OTP libs)
+    # ---------------------------------------------------------------------
+    _safe_write "$ROOT_DIR/services/docsign/requirements.txt" <<'REQ'
+fastapi>=0.95.0
+uvicorn[standard]>=0.21.0
+python-multipart>=0.0.6
+Pillow>=9.5.0
+reportlab>=4.1.0
+PyPDF2>=3.0.0
+python-dotenv>=1.0.0
+pydantic>=2.0
+REQ
+
+    # ---------------------------------------------------------------------
+    # 3. Replace DocSign's main.py with full workflow functionality
+    # ---------------------------------------------------------------------
+    _safe_write "$ROOT_DIR/services/docsign/main.py" <<'PYDOCSIGN'
+"""
+DocSign Workflow Engine (CPU-only)
+
+New features (Block 3):
+ - Create signing workflows with multiple signers.
+ - OTP delivery hook (SMS/email/webhook; default=console print).
+ - Signer-specific URLs:   /workflow/<wf_id>/start/<email>
+ - OTP verification:       POST /workflow/<wf_id>/verify
+ - Completion:             POST /workflow/<wf_id>/sign
+ - JSON workflow storage:  workflows/<wf_id>.json
+ - Audit trail storage:    audit/<wf_id>.log
+ - Final merged PDF saved in output/
+
+The workflow format:
+{
+  "workflow_id": "...",
+  "status": "pending|in_progress|completed",
+  "pdf_original": "original_<id>.pdf",
+  "pdf_signed": null or "finished_<id>.pdf",
+  "current_signer": 0,
+  "signers": [
+     {
+       "email": "a@x.com",
+       "name": "Alice",
+       "otp": "123456",
+       "signed": false,
+       "signature_file": null
+     },
+     ...
   ]
 }
-EOT
+"""
+
+import os
+import io
+import uuid
+import json
+import random
+import string
+from typing import Optional
+from pathlib import Path
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
+from PIL import Image, ImageDraw, ImageFont
+from reportlab.pdfgen import canvas
+from PyPDF2 import PdfReader, PdfWriter
+from reportlab.lib.utils import ImageReader
+
+BASE = Path(__file__).resolve().parent
+WORKFLOW_DIR = BASE / "workflows"
+AUDIT_DIR = BASE / "audit"
+OUTPUT_DIR = BASE / "output"
+
+WORKFLOW_DIR.mkdir(exist_ok=True)
+AUDIT_DIR.mkdir(exist_ok=True)
+OUTPUT_DIR.mkdir(exist_ok=True)
+
+app = FastAPI(title="DocSign Workflow Engine")
+
+
+# -------------------------------------------------------------------------
+# Utility: audit log
+# -------------------------------------------------------------------------
+def audit(wf_id: str, message: str):
+    with open(AUDIT_DIR / f"{wf_id}.log", "a") as f:
+        f.write(message + "\n")
+
+
+# -------------------------------------------------------------------------
+# OTP generator
+# -------------------------------------------------------------------------
+def generate_otp():
+    return "".join(random.choices(string.digits, k=6))
+
+
+def send_otp(email: str, otp: str):
+    """
+    To integrate with real SMS/email:
+    - Add webhook here
+    - Add SMTP
+    - Add SMS gateway
+    """
+    print(f"[DocSign OTP] Send to {email}: {otp}")
+
+
+# -------------------------------------------------------------------------
+# Pydantic models for API
+# -------------------------------------------------------------------------
+class WorkflowCreate(BaseModel):
+    signers: list[str]
+    names: Optional[list[str]] = None
+
+
+class OTPVerify(BaseModel):
+    email: str
+    otp: str
+
+
+# -------------------------------------------------------------------------
+# Core helpers
+# -------------------------------------------------------------------------
+def load_workflow(wf_id):
+    f = WORKFLOW_DIR / f"{wf_id}.json"
+    if not f.exists():
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    return json.loads(f.read_text())
+
+
+def save_workflow(wf):
+    f = WORKFLOW_DIR / f"{wf['workflow_id']}.json"
+    f.write_text(json.dumps(wf, indent=2))
+
+
+# -------------------------------------------------------------------------
+# Create workflow
+# -------------------------------------------------------------------------
+@app.post("/workflow/create")
+async def create_workflow(
+    pdf: UploadFile = File(...),
+    payload: WorkflowCreate = Form(...)
+):
+    if not pdf.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="PDF required")
+
+    pdf_bytes = await pdf.read()
+    original_name = f"original_{uuid.uuid4().hex}.pdf"
+    original_path = OUTPUT_DIR / original_name
+    original_path.write_bytes(pdf_bytes)
+
+    wf_id = uuid.uuid4().hex
+    signers = []
+    for i, email in enumerate(payload.signers):
+        name = (
+            payload.names[i]
+            if payload.names and i < len(payload.names)
+            else email.split("@")[0]
+        )
+        otp = generate_otp()
+        send_otp(email, otp)
+        signers.append({
+            "email": email,
+            "name": name,
+            "otp": otp,
+            "signed": False,
+            "signature_file": None
+        })
+
+    wf = {
+        "workflow_id": wf_id,
+        "status": "pending",
+        "pdf_original": original_name,
+        "pdf_signed": None,
+        "current_signer": 0,
+        "signers": signers
+    }
+    save_workflow(wf)
+    audit(wf_id, "Workflow created")
+
+    return {
+        "workflow_id": wf_id,
+        "next_signer_url": f"/workflow/{wf_id}/start/{signers[0]['email']}"
     }
 
-    # Create Caddy configuration
-    create_caddy_config() {
-        echo -e "${YELLOW}Creating Caddy configuration...${NC}"
-        
-        mkdir -p "$ROOT_DIR/services/caddy"
-        cat > "$ROOT_DIR/services/caddy/Caddyfile" << 'EOT'
-# Global settings
-{
-    email etu.moses@gmail.com
-    acme_ca https://acme-v02.api.letsencrypt.org/directory
+
+# -------------------------------------------------------------------------
+# Start signing: returns signer metadata
+# -------------------------------------------------------------------------
+@app.get("/workflow/{wf_id}/start/{email}")
+async def begin(wf_id: str, email: str):
+    wf = load_workflow(wf_id)
+    idx = wf["current_signer"]
+    signer = wf["signers"][idx]
+    if signer["email"] != email:
+        raise HTTPException(status_code=403, detail="Not your turn")
+
+    return {
+        "workflow_id": wf_id,
+        "email": signer["email"],
+        "name": signer["name"],
+        "message": "OTP required → POST /workflow/{wf_id}/verify"
+    }
+
+
+# -------------------------------------------------------------------------
+# OTP verification
+# -------------------------------------------------------------------------
+@app.post("/workflow/{wf_id}/verify")
+async def verify_otp(wf_id: str, payload: OTPVerify):
+    wf = load_workflow(wf_id)
+    idx = wf["current_signer"]
+    signer = wf["signers"][idx]
+
+    if signer["email"] != payload.email:
+        raise HTTPException(status_code=403, detail="Not your turn")
+
+    if payload.otp != signer["otp"]:
+        raise HTTPException(status_code=401, detail="Invalid OTP")
+
+    audit(wf_id, f"OTP verified for {payload.email}")
+    return {"status": "verified"}
+
+
+# -------------------------------------------------------------------------
+# Signature image generator
+# -------------------------------------------------------------------------
+def signature_from_name(name):
+    img = Image.new("RGBA", (500, 150), (255, 255, 255, 0))
+    d = ImageDraw.Draw(img)
+    try:
+        f = ImageFont.truetype("DejaVuSans.ttf", 48)
+    except:
+        f = ImageFont.load_default()
+    w, h = d.textsize(name, font=f)
+    d.text((20, (150 - h) // 2), name, font=f, fill=(0, 0, 0, 255))
+    return img
+
+
+# -------------------------------------------------------------------------
+# Sign action
+# -------------------------------------------------------------------------
+@app.post("/workflow/{wf_id}/sign")
+async def sign_pdf(
+    wf_id: str,
+    email: str = Form(...),
+    signature: UploadFile = File(None)
+):
+    wf = load_workflow(wf_id)
+    idx = wf["current_signer"]
+    signer = wf["signers"][idx]
+
+    if signer["email"] != email:
+        raise HTTPException(status_code=403, detail="Not your turn")
+
+    # load PDF
+    original_path = OUTPUT_DIR / wf["pdf_original"]
+    pdf_bytes = original_path.read_bytes()
+    reader = PdfReader(io.BytesIO(pdf_bytes))
+    last_page = reader.pages[-1]
+    w, h = float(last_page.mediabox.width), float(last_page.mediabox.height)
+
+    # load signature image
+    if signature:
+        sig_bytes = await signature.read()
+        sig_img = Image.open(io.BytesIO(sig_bytes)).convert("RGBA")
+    else:
+        sig_img = signature_from_name(signer["name"])
+
+    # resize
+    target_w = int(w * 0.33)
+    target_h = int(target_w * (sig_img.height / sig_img.width))
+    sig_img = sig_img.resize((target_w, target_h))
+
+    # overlay
+    packet = io.BytesIO()
+    from reportlab.pdfgen import canvas
+    c = canvas.Canvas(packet, pagesize=(w, h))
+    img_io = io.BytesIO()
+    sig_img.save(img_io, format="PNG")
+    img_io.seek(0)
+    c.drawImage(ImageReader(img_io), w - target_w - 40, 40, target_w, target_h, mask="auto")
+    c.save()
+    packet.seek(0)
+
+    overlay_reader = PdfReader(packet)
+    overlay_page = overlay_reader.pages[0]
+
+    writer = PdfWriter()
+    for i, p in enumerate(reader.pages):
+        if i == len(reader.pages) - 1:
+            p.merge_page(overlay_page)
+        writer.add_page(p)
+
+    # Save intermediate or final PDF
+    if idx == len(wf["signers"]) - 1:
+        # finished
+        out_name = f"finished_{wf_id}.pdf"
+        (OUTPUT_DIR / out_name).write_bytes(io.BytesIO(writer.write_bytes()).getvalue())
+        wf["pdf_signed"] = out_name
+        wf["status"] = "completed"
+        audit(wf_id, f"{email} completed signing; WORKFLOW COMPLETE")
+    else:
+        # next signer
+        out_name = f"partial_{wf_id}_{idx}.pdf"
+        (OUTPUT_DIR / out_name).write_bytes(io.BytesIO(writer.write_bytes()).getvalue())
+        wf["pdf_original"] = out_name
+        wf["current_signer"] += 1
+        audit(wf_id, f"{email} signed; moved to next signer")
+
+    signer["signed"] = True
+    signer["signature_file"] = out_name
+    save_workflow(wf)
+
+    return {
+        "workflow_id": wf_id,
+        "status": wf["status"],
+        "next": (
+            f"/workflow/{wf_id}/start/{wf['signers'][wf['current_signer']]['email']}"
+            if wf["status"] != "completed"
+            else None
+        )
+    }
+
+
+# -------------------------------------------------------------------------
+# Output fetch
+# -------------------------------------------------------------------------
+@app.get("/workflow/{wf_id}/output")
+async def get_output(wf_id: str):
+    wf = load_workflow(wf_id)
+    if not wf["pdf_signed"]:
+        raise HTTPException(status_code=400, detail="Workflow not completed")
+    path = OUTPUT_DIR / wf["pdf_signed"]
+    return FileResponse(path, media_type="application/pdf")
+PYDOCSIGN
+
+    echo -e "${GREEN}✓ DocSign workflow engine implemented${NC}"
 }
 
-# HTTP to HTTPS redirect
-mint.weareupsyd.com, www.mint.weareupsyd.com {
-    redir https://mint.weareupsyd.com{uri} permanent
+# ----------------------------------------------------------------------
+# Signing UI Microservice (static placeholder)
+# You can replace this with Next.js build in later blocks.
+# ----------------------------------------------------------------------
+create_signing_ui() {
+    echo -e "${YELLOW}Creating signing-ui microservice...${NC}"
+    mkdir -p "$ROOT_DIR/services/signing-ui"
+
+    _safe_write "$ROOT_DIR/services/signing-ui/Dockerfile" <<'DF'
+FROM node:18-slim
+WORKDIR /app
+COPY . .
+RUN npm init -y
+RUN npm install express
+EXPOSE 8080
+CMD ["node", "server.js"]
+DF
+
+    _safe_write "$ROOT_DIR/services/signing-ui/server.js" <<'JS'
+const express = require("express");
+const path = require("path");
+const app = express();
+
+app.get("/", (_, res) => {
+  res.send(`
+    <h2>Signing UI Placeholder</h2>
+    <p>This will render the signing page based on workflow links.</p>
+  `);
+});
+
+app.listen(8080, () => console.log("Signing UI running on port 8080"));
+JS
+
+    echo -e "${GREEN}✓ signing-ui microservice created${NC}"
 }
 
-# Main domain with path-based routing
-https://mint.weareupsyd.com {
-    # Security headers
-    header {
-        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
-        X-Content-Type-Options "nosniff"
-        X-Frame-Options "SAMEORIGIN"
-        X-XSS-Protection "1; mode=block"
-        Referrer-Policy "strict-origin-when-cross-origin"
-    }
+# ----------------------------------------------------------------------
+# Compose override to wire workflow + UI
+# ----------------------------------------------------------------------
+create_docsign_compose_extension() {
+    _safe_write "$ROOT_DIR/docker-compose.override.yml" <<'YAML2'
+version: '3.9'
 
-    # API Gateway
-    handle_path /api/* {
-        reverse_proxy gateway:80
-    }
+services:
+  docsign:
+    build: ./services/docsign
+    container_name: docsign
+    ports:
+      - "8012:8000"
+    volumes:
+      - ./services/docsign/output:/app/output
+      - ./services/docsign/workflows:/app/workflows
+      - ./services/docsign/audit:/app/audit
 
-    # AI Services
-    handle_path /ai/stt/* {
-        # Rate limiting for STT
-        @stt_ratelimit {
-            path /ai/stt/transcribe
-            rate_limit {
-                zone stt 100 1m
-            }
-        }
-        handle @stt_ratelimit {
-            rate_limit stt
-            reverse_proxy stt-service:8000
-        }
-        reverse_proxy stt-service:8000
-    }
-
-    handle_path /ai/tts/* {
-        reverse_proxy tts-service:9000
-    }
-
-    handle_path /ai/llm/* {
-        reverse_proxy llm-service:8080
-    }
-
-    # Documentation
-    handle_path /docs* {
-        root * /srv/docs
-        file_server
-        header Cache-Control "public, max-age=3600"
-    }
-
-    # Status page (protected with basic auth)
-    handle_path /status* {
-        basicauth {
-            status $2a$10$J9nXm3eXyY1qZK5pX5X5Xe
-        }
-        reverse_proxy status-dashboard:3000
-    }
-
-    # Health checks
-    handle_path /health {
-        respond "OK" 200
-    }
-
-    # Main application
-    handle {
-        root * /srv
-        try_files {path} /index.html
-        file_server
-        header Cache-Control "no-cache"
-    }
-
-    # TLS configuration
-    tls {
-        issuer acme
-    }
+  signing-ui:
+    build: ./services/signing-ui
+    container_name: signing-ui
+    ports:
+      - "8013:8080"
+YAML2
+    echo -e "${GREEN}✓ docker-compose updated${NC}"
 }
-EOT
-    }
 
-    # Function to create service YAML configurations
-    create_service_configs() {
-        echo -e "\n${BLUE}=== Creating Service Configurations ===${NC}"
-        
-        # Create services directory if it doesn't exist
-        mkdir -p "$ROOT_DIR/services"
-        
-        # Auth Service
-        mkdir -p "$ROOT_DIR/services/auth"
-        cat > "$ROOT_DIR/services/auth/config.yaml" << 'EOT'
-# Auth Service Configuration
-database:
-  host: postgres
-  port: 5432
-  name: authdb
-  user: authuser
-  password: ${DB_PASSWORD}
+# Run all creation steps
+create_docsign_workflow_extensions
+create_signing_ui
+create_docsign_compose_extension
 
-server:
-  port: 8001
-  environment: ${NODE_ENV:-development}
-  logLevel: ${LOG_LEVEL:-info}
+echo -e "${GREEN}Block 3 added: Workflow + OTP + Signing UI${NC}"
+# ==============================================================================
+# ALL-IN-ONE: AI Platform Superstack — BLOCK 4
+# Adds:
+#  - PostgreSQL + Redis migration service (idempotent SQL migration runner)
+#  - Lightweight schema migrations using plain SQL files + migration history table
+#  - A Python migration runner (uses psycopg2) that applies new SQL files in order
+#  - Dockerfile + requirements for the migrations service
+#
+# Paste this block immediately after Block 3 in your `all-in-one.sh`.
+# Running the migrations:
+#   docker-compose build migrations
+#   docker-compose run --rm migrations
+#
+# The runner reads DATABASE_URL from environment (from .env). It creates a
+# `schema_migrations` table and applies SQL files under services/migrations/sql/
+# in numeric order. It's intentionally simple and DB-agnostic (Postgres SQL).
+# ==============================================================================
 
-jwt:
-  secret: ${JWT_SECRET}
-  accessTokenExpiration: 15m
-  refreshTokenExpiration: 7d
+_create_db_migrations() {
+    echo -e "${YELLOW}Creating migrations service and SQL files...${NC}"
 
-cors:
-  allowedOrigins:
-    - https://mint.weareupsyd.com
-    - http://localhost:3000
+    mkdir -p "$ROOT_DIR/services/migrations/sql"
 
-rateLimit:
-  windowMs: 15m
-  max: 100
+    # 1) requirements
+    _safe_write "$ROOT_DIR/services/migrations/requirements.txt" <<'REQ'
+psycopg2-binary>=2.9
+python-dotenv>=1.0.0
+REQ
 
-externalServices:
-  emailProvider: sendgrid
-  storageProvider: minio
-EOT
+    # 2) Dockerfile
+    _safe_write "$ROOT_DIR/services/migrations/Dockerfile" <<'DF'
+FROM python:3.11-slim
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends gcc libpq-dev && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
+COPY . .
+CMD ["python", "migrate.py"]
+DF
 
-        # Documents Service
-        mkdir -p "$ROOT_DIR/services/documents"
-        cat > "$ROOT_DIR/services/documents/config.yaml" << 'EOT'
-# Documents Service Configuration
-server:
-  port: 8008
-  environment: ${NODE_ENV:-development}
-  logLevel: ${LOG_LEVEL:-info}
+    # 3) migration runner (migrate.py)
+    _safe_write "$ROOT_DIR/services/migrations/migrate.py" <<'PYMIG'
+#!/usr/bin/env python3
+"""
+Simple SQL-based migration runner.
 
-storage:
-  type: minio
-  endpoint: minio:9000
-  accessKey: ${MINIO_ACCESS_KEY}
-  secretKey: ${MINIO_SECRET_KEY}
-  bucketName: documents
-  useSSL: false
+Behavior:
+- Reads DATABASE_URL from environment (or .env)
+- Ensures schema_migrations table exists
+- Scans ./sql for files named like 0001_description.sql, 0002_*.sql
+- Applies any files with version > max(applied_versions)
+- Records applied migrations in schema_migrations
 
-database:
-  host: postgres
-  port: 5432
-  name: documents
-  user: ${DB_USER}
-  password: ${DB_PASSWORD}
+Usage:
+  - docker-compose run --rm migrations
+  - or run locally: python migrate.py
+"""
+import os
+import sys
+import glob
+import psycopg2
+from psycopg2.extras import execute_values
+from pathlib import Path
+from dotenv import load_dotenv
+import re
 
-cors:
-  allowedOrigins:
-    - https://mint.weareupsyd.com
-    - http://localhost:3000
-EOT
+load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
 
-        # AI Services Common Config
-        mkdir -p "$ROOT_DIR/services/ai"
-        cat > "$ROOT_DIR/services/ai/common.yaml" << 'EOT'
-# Common AI Services Configuration
-server:
-  port: 8000
-  environment: ${NODE_ENV:-development}
-  logLevel: ${LOG_LEVEL:-info}
+DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("DATABASE_URI") or os.getenv("POSTGRES_URL") or None
+if not DATABASE_URL:
+    # support older defaults if .env not set
+    host = os.getenv("POSTGRES_HOST", "postgres")
+    port = os.getenv("POSTGRES_PORT", "5432")
+    user = os.getenv("POSTGRES_USER", "ai_user")
+    password = os.getenv("POSTGRES_PASSWORD", "ChangeMePostgres123!")
+    db = os.getenv("POSTGRES_DB", "ai_platform")
+    DATABASE_URL = f"postgresql://{user}:{password}@{host}:{port}/{db}"
 
-cors:
-  allowedOrigins:
-    - https://mint.weareupsyd.com
-    - http://localhost:3000
+SQL_DIR = Path(__file__).resolve().parent / "sql"
 
-rateLimit:
-  windowMs: 15m
-  max: 100
+MIGRATION_TABLE_DDL = """
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version VARCHAR(50) PRIMARY KEY,
+    filename TEXT NOT NULL,
+    applied_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+"""
 
-auth:
-  required: true
-  jwksUri: https://mint.weareupsyd.com/.well-known/jwks.json
-EOT
+def get_connection():
+    return psycopg2.connect(DATABASE_URL)
 
-        # STT Service
-        mkdir -p "$ROOT_DIR/services/stt"
-        cat > "$ROOT_DIR/services/stt/config.yaml" << 'EOT'
-# Speech-to-Text Service Configuration
-server:
-  port: 8000
-  environment: ${NODE_ENV:-development}
-  logLevel: ${LOG_LEVEL:-info}
+def ensure_migration_table(conn):
+    with conn.cursor() as cur:
+        cur.execute(MIGRATION_TABLE_DDL)
+    conn.commit()
 
-stt:
-  model: ${STT_MODEL:-base}
-  language: ${STT_LANGUAGE:-en}
-  device: ${STT_DEVICE:-cpu}
+def get_applied_versions(conn):
+    with conn.cursor() as cur:
+        cur.execute("SELECT version FROM schema_migrations")
+        rows = cur.fetchall()
+        return set(r[0] for r in rows)
 
-ollama:
-  url: ${OLLAMA_URL:-http://ollama:11434}
-  model: ${OLLAMA_MODEL:-llama3}
+def discover_sql_files():
+    files = sorted(SQL_DIR.glob("*.sql"))
+    # parse version prefix e.g., 0001_init.sql -> 0001
+    parsed = []
+    for f in files:
+        m = re.match(r"^([0-9]+)_.*\.sql$", f.name)
+        if m:
+            parsed.append((int(m.group(1)), f))
+    parsed.sort(key=lambda x: x[0])
+    return parsed
 
-cors:
-  allowedOrigins:
-    - https://mint.weareupsyd.com
-    - http://localhost:3000
+def apply_migration(conn, version_int, filepath):
+    version = f"{version_int:04d}"
+    sql = filepath.read_text()
+    print(f"Applying {filepath.name} (version {version})...")
+    with conn.cursor() as cur:
+        cur.execute(sql)
+        cur.execute("INSERT INTO schema_migrations (version, filename) VALUES (%s, %s)", (version, filepath.name))
+    conn.commit()
+    print(f"Applied {filepath.name}")
 
-auth:
-  required: true
-EOT
+def main():
+    if not SQL_DIR.exists():
+        print("No SQL directory found at", SQL_DIR)
+        sys.exit(1)
 
-        echo -e "${GREEN}✓ Service configurations created${NC}"
-    }
+    parsed = discover_sql_files()
+    if not parsed:
+        print("No migration files found in", SQL_DIR)
+        sys.exit(0)
 
-    # Function to install system dependencies for frontend development
-    install_frontend_dependencies() {
-        echo -e "\n${BLUE}=== Installing System Dependencies ===${NC}"
-        
-        # Check OS type
-        if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-            echo -e "${YELLOW}Detected Linux system. Installing dependencies...${NC}"
-            
-            # Update package lists
-            if command -v apt-get >/dev/null 2>&1; then
-                # Debian/Ubuntu
-                sudo apt-get update
-                sudo apt-get install -y \
-                    build-essential \
-                    libcairo2-dev \
-                    libpango1.0-dev \
-                    libjpeg-dev \
-                    libgif-dev \
-                    librsvg2-dev \
-                    libxi-dev \
-                    libx11-dev \
-                    libxft-dev \
-                    libxext-dev \
-                    libgl1-mesa-dev \
-                    libglu1-mesa-dev \
-                    libxrender1 \
-                    libxkbcommon-x11-0 \
-                    libxcb-xinerama0 \
-                    xvfb \
-                    libgtk-3-0 \
-                    libgbm1 \
-                    libnss3 \
-                    libasound2 \
-                    libatk1.0-0 \
-                    libatk-bridge2.0-0 \
-                    libcups2 \
-                    libdrm2 \
-                    libxcomposite1 \
-                    libxdamage1 \
-                    libxfixes3 \
-                    libxrandr2 \
-                    libgbm1 \
-                    libxkbcommon0 \
-                    libpci3 \
-                    libxshmfence1 \
-                    libxss1 \
-                    libxcb1 \
-                    libxcb-dri3-0 \
-                    libxtst6 \
-                    libnss3 \
-                    libatspi2.0-0 \
-                    libcups2 \
-                    libx11-xcb1 \
-                    libxcb-dri3-0 \
-                    libxcomposite1 \
-                    libxcursor1 \
-                    libxdamage1 \
-                    libxfixes3 \
-                    libxi6 \
-                    libxrandr2 \
-                    libxrender1 \
-                    libxtst6 \
-                    libasound2 \
-                    libatk-bridge2.0-0 \
-                    libatk1.0-0 \
-                    libc6 \
-                    libcairo2 \
-                    libcups2 \
-                    libdbus-1-3 \
-                    libdrm2 \
-                    libexpat1 \
-                    libfontconfig1 \
-                    libgbm1 \
-                    libgcc1 \
-                    libgdk-pixbuf2.0-0 \
-                    libglib2.0-0 \
-                    libgtk-3-0 \
-                    libnspr4 \
-                    libnss3 \
-                    libpango-1.0-0 \
-                    libpangocairo-1.0-0 \
-                    libx11-6 \
-                    libx11-xcb1 \
-                    libxcb1 \
-                    libxcomposite1 \
-                    libxcursor1 \
-                    libxdamage1 \
-                    libxext6 \
-                    libxfixes3 \
-                    libxi6 \
-                    libxrandr2 \
-                    libxrender1 \
-                    libxss1 \
-                    libxtst6 \
-                    wget \
-                    curl \
-                    git
-                    
-            elif command -v yum >/dev/null 2>&1; then
-                # RHEL/CentOS
-                sudo yum groupinstall -y 'Development Tools'
-                sudo yum install -y \
-                    libX11-devel \
-                    libXcomposite-devel \
-                    libXcursor-devel \
-                    libXdamage-devel \
-                    libXext-devel \
-                    libXi-devel \
-                    libXrandr-devel \
-                    libXrender-devel \
-                    libXtst-devel \
-                    atk-devel \
-                    cups-devel \
-                    gtk3-devel \
-                    nss-devel \
-                    pango-devel \
-                    xorg-x11-server-Xvfb \
-                    wget \
-                    curl \
-                    git
-            fi
-            
-        elif [[ "$OSTYPE" == "darwin"* ]]; then
-            # macOS
-            echo -e "${YELLOW}Detected macOS. Please ensure Xcode Command Line Tools are installed.${NC}"
-            xcode-select --install || true
-            
-            # Install Homebrew if not installed
-            if ! command -v brew >/dev/null 2>&1; then
-                echo -e "${YELLOW}Installing Homebrew...${NC}"
-                /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-                echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zshrc
-                eval "$(/opt/homebrew/bin/brew shellenv)"
-            fi
-            
-            # Install dependencies
-            echo -e "${YELLOW}Installing dependencies using Homebrew...${NC}"
-            brew install pkg-config cairo pango libpng jpeg giflib librsvg
-            
+    conn = get_connection()
+    try:
+        ensure_migration_table(conn)
+        applied = get_applied_versions(conn)
+        for ver_int, path in parsed:
+            ver = f"{ver_int:04d}"
+            if ver in applied:
+                print(f"Skipping {path.name} (already applied)")
+                continue
+            apply_migration(conn, ver_int, path)
+        print("Migrations complete.")
+    finally:
+        conn.close()
+
+if __name__ == "__main__":
+    main()
+PYMIG
+
+    # 4) sample SQL migration (0001)
+    _safe_write "$ROOT_DIR/services/migrations/sql/0001_create_base_tables.sql" <<'SQL1'
+-- 0001_create_base_tables.sql
+-- Creates base tables used by services: users, workflows, documents, signature_records, audit
+
+CREATE TABLE IF NOT EXISTS users (
+  id SERIAL PRIMARY KEY,
+  email TEXT UNIQUE NOT NULL,
+  full_name TEXT,
+  password_hash TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS workflows (
+  id SERIAL PRIMARY KEY,
+  workflow_id TEXT UNIQUE NOT NULL,
+  status TEXT NOT NULL,
+  pdf_original TEXT,
+  pdf_signed TEXT,
+  current_signer INTEGER DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS workflow_signers (
+  id SERIAL PRIMARY KEY,
+  workflow_id TEXT NOT NULL,
+  signer_email TEXT NOT NULL,
+  signer_name TEXT,
+  signer_index INTEGER,
+  otp TEXT,
+  signed BOOLEAN DEFAULT FALSE,
+  signature_file TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS documents (
+  id SERIAL PRIMARY KEY,
+  document_id TEXT UNIQUE NOT NULL,
+  path TEXT,
+  content_type TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS signature_records (
+  id SERIAL PRIMARY KEY,
+  workflow_id TEXT,
+  signer_email TEXT,
+  signature_file TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS audit_entries (
+  id SERIAL PRIMARY KEY,
+  workflow_id TEXT,
+  message TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
+SQL1
+
+    # 5) optional second migration example (0002) - adds indexes
+    _safe_write "$ROOT_DIR/services/migrations/sql/0002_indexes.sql" <<'SQL2'
+-- 0002_indexes.sql
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_workflows_wfid ON workflows(workflow_id);
+CREATE INDEX IF NOT EXISTS idx_signers_workflow ON workflow_signers(workflow_id);
+SQL2
+
+    # 6) a tiny helper script to run migrations locally (optional)
+    _safe_write "$ROOT_DIR/services/migrations/run_local.sh" <<'RUNLOCAL'
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")"
+python migrate.py
+RUNLOCAL
+    chmod +x "$ROOT_DIR/services/migrations/run_local.sh"
+
+    # 7) update docker-compose.override.yml to add migrations service
+    if [ -f "$ROOT_DIR/docker-compose.override.yml" ]; then
+        # append migrations service if not already present
+        if ! grep -q "service.*migrations" -A2 "$ROOT_DIR/docker-compose.override.yml" 2>/dev/null; then
+            cat >> "$ROOT_DIR/docker-compose.override.yml" <<'YAMLAPP'
+
+  migrations:
+    build:
+      context: ./services/migrations
+      dockerfile: Dockerfile
+    container_name: migrations
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-ai_user}:${POSTGRES_PASSWORD:-ChangeMePostgres123!}@postgres:5432/${POSTGRES_DB:-ai_platform}
+    depends_on:
+      - postgres
+    entrypoint: ["python", "migrate.py"]
+    restart: "no"
+YAMLAPP
+            echo -e "${GREEN}✓ migrations service appended to docker-compose.override.yml${NC}"
         else
-            echo -e "${YELLOW}Unsupported operating system. Some dependencies may need to be installed manually.${NC}"
+            echo -e "${YELLOW}migrations service already present in docker-compose.override.yml — skipped append${NC}"
         fi
-        
-        echo -e "${GREEN}✓ System dependencies installed${NC}"
-    }
+    else
+        # create a small override with migrations only
+        _safe_write "$ROOT_DIR/docker-compose.override.yml" <<'YAMLNEW'
+version: '3.9'
+services:
+  migrations:
+    build:
+      context: ./services/migrations
+      dockerfile: Dockerfile
+    container_name: migrations
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-ai_user}:${POSTGRES_PASSWORD:-ChangeMePostgres123!}@postgres:5432/${POSTGRES_DB:-ai_platform}
+    depends_on:
+      - postgres
+    entrypoint: ["python", "migrate.py"]
+    restart: "no"
+YAMLNEW
+        echo -e "${GREEN}✓ docker-compose.override.yml created with migrations service${NC}"
+    fi
 
-    # Function to build frontend applications
-    build_frontend() {
-        echo -e "\n${BLUE}=== Building Frontend Applications ===${NC}"
-        
-        # Check if frontend directory exists
-        if [ ! -d "$ROOT_DIR/frontend" ]; then
-            echo -e "${YELLOW}Frontend directory not found at $ROOT_DIR/frontend${NC}"
-            echo -e "Creating frontend directory..."
-            mkdir -p "$ROOT_DIR/frontend"
-        fi
-        
-        # Install system dependencies
-        install_frontend_dependencies
-        
-        # Run the build script
-        if [ -f "$ROOT_DIR/build-frontend.sh" ]; then
-            echo -e "\n${YELLOW}Starting frontend build process...${NC}"
-            chmod +x "$ROOT_DIR/build-frontend.sh"
-            "$ROOT_DIR/build-frontend.sh"
-            
-            if [ $? -eq 0 ]; then
-                echo -e "\n${GREEN}✓ Frontend build completed successfully!${NC}"
-                echo -e "\n${BLUE}Development Servers:${NC}"
-                echo -e "- Realtime Transcriber: http://localhost:3000"
-                echo -e "- ElevenLabs Voice Agent: http://localhost:3001"
-                return 0
-            else
-                echo -e "\n${RED}✗ Frontend build failed. Please check the logs above for errors.${NC}"
-                return 1
-            fi
-        else
-            echo -e "${RED}Error: Frontend build script not found at $ROOT_DIR/build-frontend.sh${NC}"
-            return 1
-        fi
-    }
-
-    # Function to create YAML configuration files for each service
-    create_service_configs() {
-        echo -e "\n${BLUE}=== Creating Service Configurations ===${NC}"
-        
-        # Create YAML configuration files for each service
-        for service in "${SERVICES[@]}"; do
-            config_file="${ROOT_DIR}/${service}/config.yaml"
-            echo -e "${YELLOW}Creating configuration file for ${service} service...${NC}"
-            cat > "${config_file}" << 'EOT'
-service:
-  name: ${service}
-  port: 8000
-  cors:
-    allowedOrigins:
-      - https://mint.weareupsyd.com
-      - http://localhost:3000
-  auth:
-    required: true
-EOT
-            echo -e "${GREEN}✓ Configuration file created for ${service} service${NC}"
-        done
-    }
-
-    # Create service configuration files
-    create_service_configs() {
-        echo -e "\n${BLUE}=== Creating Service Configurations ===${NC}"
-        
-        # Create services directory if it doesn't exist
-        mkdir -p "$ROOT_DIR/services"
-        
-        # Auth Service
-        mkdir -p "$ROOT_DIR/services/auth"
-        cat > "$ROOT_DIR/services/auth/config.yaml" << 'EOT'
-# Auth Service Configuration
-database:
-  host: postgres
-  port: 5432
-  name: authdb
-  user: authuser
-  password: ${DB_PASSWORD}
-
-server:
-  port: 8001
-  environment: ${NODE_ENV:-development}
-  logLevel: ${LOG_LEVEL:-info}
-
-jwt:
-  secret: ${JWT_SECRET}
-  accessTokenExpiration: 15m
-  refreshTokenExpiration: 7d
-
-cors:
-  allowedOrigins:
-    - https://mint.weareupsyd.com
-    - http://localhost:3000
-
-rateLimit:
-  windowMs: 15m
-  max: 100
-
-externalServices:
-  emailProvider: sendgrid
-  storageProvider: minio
-EOT
-
-        # Documents Service
-        mkdir -p "$ROOT_DIR/services/documents"
-        cat > "$ROOT_DIR/services/documents/config.yaml" << 'EOT'
-# Documents Service Configuration
-server:
-  port: 8008
-  environment: ${NODE_ENV:-development}
-  logLevel: ${LOG_LEVEL:-info}
-
-storage:
-  type: minio
-  endpoint: minio:9000
-  accessKey: ${MINIO_ACCESS_KEY}
-  secretKey: ${MINIO_SECRET_KEY}
-  bucketName: documents
-  useSSL: false
-
-database:
-  host: postgres
-  port: 5432
-  name: documents
-  user: ${DB_USER}
-  password: ${DB_PASSWORD}
-
-cors:
-  allowedOrigins:
-    - https://mint.weareupsyd.com
-    - http://localhost:3000
-EOT
-
-        # AI Services Common Config
-        mkdir -p "$ROOT_DIR/services/ai"
-        cat > "$ROOT_DIR/services/ai/common.yaml" << 'EOT'
-# Common AI Services Configuration
-server:
-  port: 8000
-  environment: ${NODE_ENV:-development}
-  logLevel: ${LOG_LEVEL:-info}
-
-cors:
-  allowedOrigins:
-    - https://mint.weareupsyd.com
-    - http://localhost:3000
-
-rateLimit:
-  windowMs: 15m
-  max: 100
-
-auth:
-  required: true
-  jwksUri: https://mint.weareupsyd.com/.well-known/jwks.json
-EOT
-
-        # STT Service
-        mkdir -p "$ROOT_DIR/services/stt"
-        cat > "$ROOT_DIR/services/stt/config.yaml" << 'EOT'
-# Speech-to-Text Service Configuration
-server:
-  port: 8000
-  environment: ${NODE_ENV:-development}
-  logLevel: ${LOG_LEVEL:-info}
-
-stt:
-  model: ${STT_MODEL:-base}
-  language: ${STT_LANGUAGE:-en}
-  device: ${STT_DEVICE:-cpu}
-
-ollama:
-  url: ${OLLAMA_URL:-http://ollama:11434}
-  model: ${OLLAMA_MODEL:-llama3}
-
-cors:
-  allowedOrigins:
-    - https://mint.weareupsyd.com
-    - http://localhost:3000
-
-auth:
-  required: true
-EOT
-
-        # TTS Service
-        mkdir -p "$ROOT_DIR/services/tts"
-        cat > "$ROOT_DIR/services/tts/config.yaml" << 'EOT'
-# Text-to-Speech Service Configuration
-server:
-  port: 9000
-  environment: ${NODE_ENV:-development}
-  logLevel: ${LOG_LEVEL:-info}
-
-tts:
-  provider: ${TTS_PROVIDER:-coqui}
-  voice: ${TTS_VOICE:-tts_models/en/ljspeech/vits}
-  model: ${TTS_MODEL:-vits}
-
-cors:
-  allowedOrigins:
-    - https://mint.weareupsyd.com
-    - http://localhost:3000
-
-auth:
-  required: true
-EOT
-
-        # LLM Service
-        mkdir -p "$ROOT_DIR/services/llm"
-        cat > "$ROOT_DIR/services/llm/config.yaml" << 'EOT'
-# LLM Service Configuration
-server:
-  port: 8080
-  environment: ${NODE_ENV:-development}
-  logLevel: ${LOG_LEVEL:-info}
-
-llm:
-  provider: ${LLM_PROVIDER:-ollama}
-  model: ${LLM_MODEL:-qwen:4b}
-  temperature: ${LLM_TEMPERATURE:-0.7}
-  maxTokens: ${LLM_MAX_TOKENS:-2048}
-
-ollama:
-  url: ${OLLAMA_URL:-http://ollama:11434}
-
-cors:
-  allowedOrigins:
-    - https://mint.weareupsyd.com
-    - http://localhost:3000
-
-auth:
-  required: true
-EOT
-
-    echo -e "${GREEN}✓ Service configurations created${NC}"
+    echo -e "${GREEN}✓ Migrations service created (SQL runner + sample SQL files)${NC}"
+    echo -e "${YELLOW}Run migrations with:${NC} docker-compose build migrations && docker-compose run --rm migrations${NC}"
 }
 
-# Create configurations for additional services listed in nginx config
-create_missing_service_configs() {
-    echo -e "\n${BLUE}=== Creating Additional Service Configurations ===${NC}"
-    
-    # Links Service
-    mkdir -p "$ROOT_DIR/services/links"
-    cat > "$ROOT_DIR/services/links/config.yaml" << 'EOT'
-# Links Service Configuration
-server:
-  port: 8002
-  environment: ${NODE_ENV:-development}
-  logLevel: ${LOG_LEVEL:-info}
+# Execute creation right away
+_create_db_migrations
 
-database:
-  host: postgres
-  port: 5432
-  name: links
-  user: ${DB_USER}
-  password: ${DB_PASSWORD}
+# helpful note for the user
+echo -e "${BLUE}Block 4 installed: migrations service and sample SQL files.${NC}"
+echo -e "${BLUE}Tip:${NC} If you prefer to run migrations locally without Docker, set DATABASE_URL in your shell or .env and run services/migrations/run_local.sh"
+# ==============================================================================
+# ALL-IN-ONE: AI Platform Superstack — BLOCK 5
+# Adds:
+#  - Notification microservice (email via SMTP, webhook, and SMS gateway stub)
+#  - Redis-backed rate-limiting / dedupe for OTPs and notifications
+#  - Integration helpers for DocSign workflows (webhook-friendly)
+#  - Dockerfile + requirements
+#  - Compose override to wire notifications service and Redis dependency
+#
+# Behavior:
+#  - POST /notify  { "to": "...", "type": "email|sms|webhook", "subject": "...", "body": "...", "webhook_url": "..." }
+#  - POST /send-otp { "to": "...", "method": "email|sms", "otp": "123456", "ttl_secs": 300 }
+#  - GET  /health
+#  - Uses REDIS for storing OTP keys and preventing repeated sends.
+#  - SMTP uses env variables (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS). If not set, email falls back to console-print.
+# ==============================================================================
 
-cors:
-  allowedOrigins:
-    - https://mint.weareupsyd.com
-    - http://localhost:3000
+create_notifications_service() {
+    echo -e "${YELLOW}Creating notifications service...${NC}"
+    mkdir -p "$ROOT_DIR/services/notifications"
 
-rateLimit:
-  windowMs: 15m
-  max: 100
-
-auth:
-  required: true
-EOT
-
-    # Messaging Service
-    mkdir -p "$ROOT_DIR/services/messaging"
-    cat > "$ROOT_DIR/services/messaging/config.yaml" << 'EOT'
-# Messaging Service Configuration
-server:
-  port: 8003
-  environment: ${NODE_ENV:-development}
-  logLevel: ${LOG_LEVEL:-info}
-
-database:
-  host: postgres
-  port: 5432
-  name: messaging
-  user: ${DB_USER}
-  password: ${DB_PASSWORD}
-
-cors:
-  allowedOrigins:
-    - https://mint.weareupsyd.com
-    - http://localhost:3000
-
-auth:
-  required: true
-EOT
-
-    # Push Service
-    mkdir -p "$ROOT_DIR/services/push"
-    cat > "$ROOT_DIR/services/push/config.yaml" << 'EOT'
-# Push Notification Service Configuration
-server:
-  port: 8004
-  environment: ${NODE_ENV:-development}
-  logLevel: ${LOG_LEVEL:-info}
-
-webPush:
-  vapidPublicKey: ${VAPID_PUBLIC_KEY}
-  vapidPrivateKey: ${VAPID_PRIVATE_KEY}
-  vapidEmail: ${VAPID_EMAIL}
-
-cors:
-  allowedOrigins:
-    - https://mint.weareupsyd.com
-    - http://localhost:3000
-
-auth:
-  required: true
-EOT
-
-    # OCR Service
-    mkdir -p "$ROOT_DIR/services/ocr"
-    cat > "$ROOT_DIR/services/ocr/config.yaml" << 'EOT'
-# OCR Service Configuration
-server:
-  port: 8001
-  environment: ${NODE_ENV:-development}
-  logLevel: ${LOG_LEVEL:-info}
-
-ocr:
-  provider: tesseract
-  languages: [eng]
-  dpi: 300
-
-cors:
-  allowedOrigins:
-    - https://mint.weareupsyd.com
-    - http://localhost:3000
-
-auth:
-  required: true
-EOT
-
-    # Voice Service
-    mkdir -p "$ROOT_DIR/services/voice"
-    cat > "$ROOT_DIR/services/voice/config.yaml" << 'EOT'
-# Voice Service Configuration
-server:
-  port: 8004
-  environment: ${NODE_ENV:-development}
-  logLevel: ${LOG_LEVEL:-info}
-
-voice:
-  sampleRate: 16000
-  channels: 1
-  bitDepth: 16
-  silenceThreshold: 0.5
-
-stt:
-  url: http://stt-service:8000/api/stt
-
-tts:
-  url: http://tts-service:9000/api/tts
-
-cors:
-  allowedOrigins:
-    - https://mint.weareupsyd.com
-    - http://localhost:3000
-
-auth:
-  required: true
-EOT
-
-    # DocGen Service
-    mkdir -p "$ROOT_DIR/services/docgen"
-    cat > "$ROOT_DIR/services/docgen/config.yaml" << 'EOT'
-# Document Generation Service Configuration
-server:
-  port: 8005
-  environment: ${NODE_ENV:-development}
-  logLevel: ${LOG_LEVEL:-info}
-
-templates:
-  directory: /app/templates
-  defaultFormat: pdf
-
-storage:
-  type: minio
-  endpoint: minio:9000
-  accessKey: ${MINIO_ACCESS_KEY}
-  secretKey: ${MINIO_SECRET_KEY}
-  bucketName: documents
-  useSSL: false
-
-cors:
-  allowedOrigins:
-    - https://mint.weareupsyd.com
-    - http://localhost:3000
-
-auth:
-  required: true
-EOT
-
-    # DocSign Service
-    mkdir -p "$ROOT_DIR/services/docsign"
-    cat > "$ROOT_DIR/services/docsign/config.yaml" << 'EOT'
-# Document Signing Service Configuration
-server:
-  port: 8006
-  environment: ${NODE_ENV:-development}
-  logLevel: ${LOG_LEVEL:-info}
-
-signing:
-  defaultExpiry: 30d
-  defaultFormat: pdf
-
-storage:
-  type: minio
-  endpoint: minio:9000
-  accessKey: ${MINIO_ACCESS_KEY}
-  secretKey: ${MINIO_SECRET_KEY}
-  bucketName: documents
-  useSSL: false
-
-cors:
-  allowedOrigins:
-    - https://mint.weareupsyd.com
-    - http://localhost:3000
-
-auth:
-  required: true
-EOT
-
-    # Rules Service
-    mkdir -p "$ROOT_DIR/services/rules"
-    cat > "$ROOT_DIR/services/rules/config.yaml" << 'EOT'
-# Rules Engine Service Configuration
-server:
-  port: 8007
-  environment: ${NODE_ENV:-development}
-  logLevel: ${LOG_LEVEL:-info}
-
-rules:
-  directory: /app/rules
-  defaultFormat: json
-
-database:
-  host: postgres
-  port: 5432
-  name: rules
-  user: ${DB_USER}
-  password: ${DB_PASSWORD}
-
-cors:
-  allowedOrigins:
-    - https://mint.weareupsyd.com
-    - http://localhost:3000
-
-auth:
-  required: true
-EOT
-
-    # PWA Configuration
-    mkdir -p "$ROOT_DIR/services/pwa"
-    cat > "$ROOT_DIR/services/pwa/config.yaml" << 'EOT'
-# Progressive Web App Configuration
-server:
-  port: 80
-  environment: ${NODE_ENV:-production}
-  logLevel: ${LOG_LEVEL:-info}
-
-pwa:
-  name: "AI Platform"
-  shortName: "AIPlatform"
-  themeColor: "#2563eb"
-  backgroundColor: "#ffffff"
-  display: "standalone"
-  scope: "/"
-  startUrl: "/"
-
-api:
-  baseUrl: "/api"
-  authUrl: "/auth"
-
-cors:
-  allowedOrigins:
-    - https://mint.weareupsyd.com
-    - http://localhost:3000
-EOT
-
-echo -e "${GREEN}✓ Additional service configurations created${NC}"
-}
-
-add_stt_service() {
-    echo -e "${YELLOW}Adding STT service with Ollama integration...${NC}"
-    
-    # Create STT service directory
-    mkdir -p "$ROOT_DIR/services/stt"
-    
-    # Create requirements.txt
-    cat > "$ROOT_DIR/services/stt/requirements.txt" << 'EOT'
+    # requirements
+    _safe_write "$ROOT_DIR/services/notifications/requirements.txt" <<'REQ'
 fastapi>=0.95.0
 uvicorn[standard]>=0.21.0
-torch>=2.0.0
-torchaudio>=2.0.0
-transformers>=4.28.0
-soundfile>=0.12.1
-numpy>=1.24.2
-python-multipart>=0.0.6
+httpx>=0.24.0
 python-dotenv>=1.0.0
-aiohttp>=3.8.0
-EOT
+redis>=4.5.0
+pydantic>=2.0
+REQ
 
-    # Create Dockerfile
-    cat > "$ROOT_DIR/services/stt/Dockerfile" << 'EOT'
-FROM python:3.9-slim
+    # Dockerfile
+    _safe_write "$ROOT_DIR/services/notifications/Dockerfile" <<'DFNOTIF'
+FROM python:3.11-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    netcat \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
+COPY . .
+EXPOSE 8000
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+DFNOTIF
+
+    # main.py
+    _safe_write "$ROOT_DIR/services/notifications/main.py" <<'PYNOTIF'
+"""
+Notifications Service
+ - POST /notify    : send general notification (email/sms/webhook)
+ - POST /send-otp  : send OTP (stores in Redis with TTL)
+ - GET  /verify-otp?to=...&otp=...  : verify OTP
+ - GET  /health
+
+Redis keys:
+ - otp:{to} => otp string (ttl)
+Rate limits:
+ - send-lock:{to} to prevent rapid repeat sends (short TTL)
+"""
+
+import os
+import smtplib
+import json
+import logging
+from typing import Optional
+from pathlib import Path
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
+import httpx
+import redis
+from dotenv import load_dotenv
+from email.message import EmailMessage
+from time import time
+
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
+SMTP_HOST = os.getenv("SMTP_HOST", "")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_PASS = os.getenv("SMTP_PASS", "")
+SMTP_FROM = os.getenv("SMTP_FROM", "noreply@example.com")
+
+RATE_LOCK_TTL = int(os.getenv("NOTIF_RATE_LOCK_TTL", "5"))  # seconds between identical sends
+
+r = redis.from_url(REDIS_URL, decode_responses=True, socket_timeout=5)
+
+app = FastAPI(title="Notifications Service")
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("notifications")
+
+class NotifyPayload(BaseModel):
+    to: str
+    type: str = Field(..., description="email|sms|webhook")
+    subject: Optional[str] = None
+    body: str
+    webhook_url: Optional[str] = None
+
+class OTPSendPayload(BaseModel):
+    to: str
+    method: str = Field("email", description="email|sms")
+    otp: str
+    ttl_secs: int = 300
+
+@app.get("/health")
+async def health():
+    try:
+        pong = r.ping()
+        redis_ok = bool(pong)
+    except Exception as e:
+        redis_ok = False
+    return {"status":"healthy", "redis": redis_ok}
+
+def send_email_smtp(to: str, subject: str, body: str):
+    if not SMTP_HOST or not SMTP_USER or not SMTP_PASS:
+        # fallback to console printing
+        logger.info("SMTP not configured — printing email to console")
+        logger.info("TO: %s\nSUBJECT: %s\nBODY:\n%s", to, subject, body)
+        return True
+
+    msg = EmailMessage()
+    msg["From"] = SMTP_FROM
+    msg["To"] = to
+    msg["Subject"] = subject or "Notification"
+    msg.set_content(body)
+
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as server:
+            server.starttls()
+            server.login(SMTP_USER, SMTP_PASS)
+            server.send_message(msg)
+        logger.info("Email sent to %s", to)
+        return True
+    except Exception as e:
+        logger.exception("SMTP send failed")
+        return False
+
+def send_webhook(url: str, payload: dict):
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            r = client.post(url, json=payload)
+            r.raise_for_status()
+        logger.info("Webhook sent to %s", url)
+        return True
+    except Exception as e:
+        logger.exception("Webhook failed")
+        return False
+
+def send_sms_stub(to: str, body: str):
+    # Replace with real SMS gateway integration (Twilio, Africa's Talking, etc.)
+    logger.info("[SMS STUB] to=%s body=%s", to, body)
+    return True
+
+@app.post("/notify")
+async def notify(payload: NotifyPayload):
+    lock_key = f"send-lock:{payload.type}:{payload.to}"
+    # simple rate lock to avoid accidental spam
+    if r.set(lock_key, "1", nx=True, ex=RATE_LOCK_TTL):
+        pass
+    else:
+        raise HTTPException(status_code=429, detail="Rate limit: try again later")
+
+    if payload.type == "email":
+        ok = send_email_smtp(payload.to, payload.subject or "Notification", payload.body)
+        if not ok:
+            raise HTTPException(status_code=502, detail="Email send failed")
+        return {"status":"sent","method":"email"}
+    elif payload.type == "webhook":
+        if not payload.webhook_url:
+            raise HTTPException(status_code=400, detail="webhook_url required for webhook type")
+        ok = send_webhook(payload.webhook_url, {"to": payload.to, "body": payload.body})
+        if not ok:
+            raise HTTPException(status_code=502, detail="Webhook failed")
+        return {"status":"sent","method":"webhook"}
+    elif payload.type == "sms":
+        ok = send_sms_stub(payload.to, payload.body)
+        if not ok:
+            raise HTTPException(status_code=502, detail="SMS send failed")
+        return {"status":"sent","method":"sms"}
+    else:
+        raise HTTPException(status_code=400, detail="Unknown notification type")
+
+@app.post("/send-otp")
+async def send_otp(payload: OTPSendPayload):
+    key = f"otp:{payload.to}"
+    existing = r.get(key)
+    if existing:
+        # already have an OTP — don't overwrite; return remaining TTL
+        ttl = r.ttl(key)
+        return {"status":"exists","ttl": ttl}
+
+    # store otp with TTL
+    r.set(key, payload.otp, ex=payload.ttl_secs)
+    # also set a short send-lock to avoid duplicates
+    r.set(f"send-lock:otp:{payload.to}", "1", ex=RATE_LOCK_TTL)
+
+    # send via method
+    if payload.method == "email":
+        subject = "Your verification code"
+        body = f"Your OTP is {payload.otp}. It expires in {payload.ttl_secs} seconds."
+        ok = send_email_smtp(payload.to, subject, body)
+    elif payload.method == "sms":
+        ok = send_sms_stub(payload.to, f"Your OTP is {payload.otp}")
+    else:
+        ok = False
+
+    if not ok:
+        raise HTTPException(status_code=502, detail="Failed to send OTP")
+
+    return {"status":"sent","method": payload.method, "ttl": payload.ttl_secs}
+
+@app.get("/verify-otp")
+async def verify_otp(to: str, otp: str):
+    key = f"otp:{to}"
+    stored = r.get(key)
+    if not stored:
+        raise HTTPException(status_code=404, detail="No OTP found or expired")
+    if stored != otp:
+        raise HTTPException(status_code=401, detail="Invalid OTP")
+    # optionally delete the key on successful verification
+    r.delete(key)
+    return {"status":"verified"}
+PYNOTIF
+
+    # Compose override: add notifications service
+    if [ -f "$ROOT_DIR/docker-compose.override.yml" ]; then
+        if ! grep -q "notifications" "$ROOT_DIR/docker-compose.override.yml"; then
+            cat >> "$ROOT_DIR/docker-compose.override.yml" <<'YAML'
+  notifications:
+    build:
+      context: ./services/notifications
+      dockerfile: Dockerfile
+    container_name: notifications
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - SMTP_FROM=${SMTP_FROM:-noreply@example.com}
+    depends_on:
+      - redis
+YAML
+            echo -e "${GREEN}✓ notifications service appended to docker-compose.override.yml${NC}"
+        else
+            echo -e "${YELLOW}notifications service already exists in docker-compose.override.yml — skipped${NC}"
+        fi
+    else
+        _safe_write "$ROOT_DIR/docker-compose.override.yml" <<'YAMLNEW'
+version: '3.9'
+services:
+  notifications:
+    build:
+      context: ./services/notifications
+      dockerfile: Dockerfile
+    container_name: notifications
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+YAMLNEW
+        echo -e "${GREEN}✓ docker-compose.override.yml created with notifications service${NC}"
+    fi
+
+    echo -e "${GREEN}✓ Notifications service created (SMTP/webhook/SMS stub + Redis)${NC}"
+    echo -e "${YELLOW}Health endpoint after start: http://localhost:8000/health (port maps via compose)${NC}"
+}
+
+create_notifications_service
+
+echo -e "${BLUE}Block 5 installed: notifications microservice (SMTP/webhook/SMS stub).${NC}"
+echo -e "${BLUE}Next suggested block: Full Next.js Signing UI or Gateway routing integration.${NC}"
+```bash
+# ==============================================================================
+# ALL-IN-ONE: AI Platform Superstack — BLOCK 6
+# Next.js Signing UI (production-ready) — paste after previous blocks
+#
+# Adds a full Next.js signing interface:
+#  - /workflow/[wfId]/start/[email]  (OTP -> signature pad -> sign)
+#  - API proxy at /api/proxy/*        (forwards to docsign service)
+#  - Minimal styling (no Tailwind) to avoid extra installs
+#  - Dockerfile (build + start)
+#  - docker-compose.override.yml entry to wire into stack at port 3000
+#
+# Notes:
+#  - The Next.js app proxies requests to the docsign service at
+#    http://docsign:8000 by default (set NEXT_PUBLIC_DOCSIGN_URL env to override).
+#  - This UI is intentionally simple and lightweight so you can iterate quickly.
+# ==============================================================================
+
+# ensure helper exists
+if ! declare -f _safe_write >/dev/null 2>&1; then
+  echo "Error: _safe_write helper not found. Paste Block 1..5 first."
+  exit 1
+fi
+
+create_nextjs_signing_ui() {
+  echo -e "${YELLOW}Creating Next.js Signing UI...${NC}"
+  mkdir -p "$ROOT_DIR/services/signing-ui-next"
+  cd "$ROOT_DIR/services/signing-ui-next" || exit 1
+
+  # package.json
+  _safe_write "$ROOT_DIR/services/signing-ui-next/package.json" <<'PKG'
+{
+  "name": "signing-ui",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000"
+  },
+  "dependencies": {
+    "axios": "^1.4.0",
+    "next": "14.1.0",
+    "react": "18.2.0",
+    "react-dom": "18.2.0"
+  }
+}
+PKG
+
+  # next.config.js
+  _safe_write "$ROOT_DIR/services/signing-ui-next/next.config.js" <<'NEXTCFG'
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  reactStrictMode: true,
+  env: {
+    NEXT_PUBLIC_DOCSIGN_URL: process.env.NEXT_PUBLIC_DOCSIGN_URL || 'http://docsign:8000'
+  }
+}
+module.exports = nextConfig
+NEXTCFG
+
+  # Basic global CSS
+  mkdir -p "$ROOT_DIR/services/signing-ui-next/styles"
+  _safe_write "$ROOT_DIR/services/signing-ui-next/styles/globals.css" <<'CSS'
+:root{
+  --bg:#f7f7fb;
+  --card:#ffffff;
+  --muted:#6b7280;
+  --accent:#0b5fff;
+  --danger:#ef4444;
+}
+html,body,#__next{height:100%}
+body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial; background:var(--bg); margin:0; color:#0f172a}
+.container{max-width:900px;margin:28px auto;padding:20px}
+.card{background:var(--card);border-radius:8px;padding:20px;box-shadow:0 6px 18px rgba(8,8,15,0.06)}
+.h1{font-size:20px;margin:0 0 12px}
+.small{font-size:13px;color:var(--muted)}
+.input, textarea{width:100%;padding:10px;border:1px solid #e6e9ef;border-radius:6px;margin-top:8px}
+.button{background:var(--accent);color:white;padding:10px 14px;border-radius:6px;border:0;cursor:pointer}
+.button:disabled{opacity:0.6}
+.row{display:flex;gap:12px;align-items:center}
+.canvas-wrap{border:1px dashed #e6e9ef;border-radius:6px;padding:10px;background:#fbfdff}
+.notice{background:#fff9e6;border-left:4px solid #ffd54b;padding:10px;border-radius:6px;margin-bottom:12px}
+.footer{margin-top:18px;font-size:13px;color:var(--muted)}
+CSS
+
+  # pages/_app.js
+  mkdir -p "$ROOT_DIR/services/signing-ui-next/pages"
+  _safe_write "$ROOT_DIR/services/signing-ui-next/pages/_app.js" <<'APPJS'
+import '../styles/globals.css'
+
+export default function App({ Component, pageProps }) {
+  return <Component {...pageProps} />
+}
+APPJS
+
+  # pages/index.js
+  _safe_write "$ROOT_DIR/services/signing-ui-next/pages/index.js" <<'INDEXJS'
+import Link from "next/link";
+
+export default function Home(){
+  return (
+    <div className="container">
+      <div className="card">
+        <h1 className="h1">Signing UI (Placeholder)</h1>
+        <p className="small">Use a workflow link from the DocSign workflow engine to start signing.</p>
+        <p className="small">Example (replace with your workflow id and signer email):</p>
+        <pre>/workflow/{'{wfId}'}/start/{'{email}'}</pre>
+        <p className="small">You can also use the signing UI API proxy under <code>/api/proxy</code>.</p>
+        <div style={{marginTop:12}}>
+          <Link href="/"><a className="button">Refresh</a></Link>
+        </div>
+      </div>
+    </div>
+  )
+}
+INDEXJS
+
+  # pages/api/proxy/[...path].js - proxy to docsign backend
+  mkdir -p "$ROOT_DIR/services/signing-ui-next/pages/api/proxy"
+  _safe_write "$ROOT_DIR/services/signing-ui-next/pages/api/proxy/[...path].js" <<'PROXYJS'
+import httpProxy from "http-proxy";
+import { NextApiRequest, NextApiResponse } from "next";
+
+const proxy = httpProxy.createProxyServer();
+
+const target = process.env.NEXT_PUBLIC_DOCSIGN_URL || "http://docsign:8000";
+
+export const config = {
+  api: {
+    bodyParser: false,
+    externalResolver: true
+  }
+};
+
+export default function handler(req, res) {
+  // rewrite URL: /api/proxy/<path> -> <target>/<path>
+  const path = req.query.path;
+  const forwardPath = Array.isArray(path) ? path.join("/") : path;
+  req.url = `/${forwardPath}${req.url.includes("?") ? "?" + req.url.split("?")[1] : ""}`;
+  proxy.web(req, res, { target, changeOrigin: true }, (e) => {
+    console.error("Proxy error:", e);
+    res.status(502).json({ error: "proxy_error", details: String(e) });
+  });
+}
+PROXYJS
+
+  # pages/workflow/[wfId]/start/[email].js - OTP + signature pad
+  mkdir -p "$ROOT_DIR/services/signing-ui-next/pages/workflow/[wfId]/start"
+  _safe_write "$ROOT_DIR/services/signing-ui-next/pages/workflow/[wfId]/start/[email].js" <<'SIGNPAGE'
+import { useState, useRef, useEffect } from "react";
+import axios from "axios";
+import { useRouter } from "next/router";
+
+export default function SignPage(){
+  const router = useRouter();
+  const { wfId, email } = router.query;
+  const [status, setStatus] = useState("loading");
+  const [otp, setOtp] = useState("");
+  const [verified, setVerified] = useState(false);
+  const [message, setMessage] = useState("");
+  const canvasRef = useRef(null);
+  const [drawing, setDrawing] = useState(false);
+
+  useEffect(()=>{ if(wfId && email) setStatus("ready") }, [wfId, email]);
+
+  // canvas helpers
+  useEffect(()=>{
+    const canvas = canvasRef.current;
+    if(!canvas) return;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.strokeStyle = "#111827";
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = "round";
+  }, [canvasRef]);
+
+  function startDraw(e){
+    setDrawing(true);
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const ctx = canvas.getContext("2d");
+    ctx.beginPath();
+    ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
+  }
+  function draw(e){
+    if(!drawing) return;
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const ctx = canvas.getContext("2d");
+    ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
+    ctx.stroke();
+  }
+  function endDraw(){
+    setDrawing(false);
+  }
+  function clearCanvas(){
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+  }
+
+  async function requestVerifyOTP(){
+    setMessage("");
+    try{
+      // The workflow engine already generated and sent OTP — just ask user to enter it
+      // We call the docsign verify endpoint via proxy.
+      const res = await axios.post(`/api/proxy/workflow/${wfId}/verify`, { email, otp });
+      if(res.data && res.data.status === "verified"){
+        setVerified(true);
+        setMessage("OTP verified — you can sign now");
+      } else {
+        setMessage("Verified response: " + JSON.stringify(res.data));
+      }
+    }catch(e){
+      setMessage("OTP verify failed: " + (e.response?.data?.detail || e.message));
+    }
+  }
+
+  async function submitSignature(){
+    setMessage("Submitting signature...");
+    try{
+      const canvas = canvasRef.current;
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+      const form = new FormData();
+      form.append("email", email);
+      form.append("signature", blob, "signature.png");
+
+      const res = await axios.post(`/api/proxy/workflow/${wfId}/sign`, form, {
+        headers: { "Content-Type": "multipart/form-data" }
+      });
+
+      setMessage("Signature submitted. Workflow status: " + (res.data.status || ""));
+      if(res.data.next){
+        setTimeout(()=>{ window.location.href = res.data.next.replace("http://docsign:8000",""); }, 1200);
+      } else {
+        setMessage("Signing complete; you can download the final document via DocSign.");
+      }
+    }catch(e){
+      setMessage("Signing failed: " + (e.response?.data?.detail || e.message));
+    }
+  }
+
+  return (
+    <div className="container">
+      <div className="card">
+        <h1 className="h1">Sign Document</h1>
+        <p className="small">Workflow: <strong>{wfId}</strong></p>
+        <p className="small">Signer: <strong>{email}</strong></p>
+
+        {!verified && (
+          <>
+            <div className="notice">Enter the OTP sent to your email. If you did not receive it, ask the workflow creator to resend.</div>
+            <input className="input" placeholder="Enter OTP" value={otp} onChange={e=>setOtp(e.target.value)} />
+            <div style={{marginTop:8}} className="row">
+              <button className="button" onClick={requestVerifyOTP}>Verify OTP</button>
+            </div>
+          </>
+        )}
+
+        {verified && (
+          <>
+            <div style={{marginTop:12}}>
+              <div className="small">Draw your signature below (mouse or touch)</div>
+              <div className="canvas-wrap" style={{marginTop:8}}>
+                <canvas
+                  ref={canvasRef}
+                  width={800}
+                  height={200}
+                  onMouseDown={startDraw}
+                  onMouseMove={draw}
+                  onMouseUp={endDraw}
+                  onMouseLeave={endDraw}
+                  style={{width:"100%",height:200}}
+                />
+              </div>
+              <div style={{marginTop:8}} className="row">
+                <button className="button" onClick={submitSignature}>Submit Signature</button>
+                <button className="button" style={{background:"#e5e7eb", color:"#0f172a"}} onClick={clearCanvas}>Clear</button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {message && <div style={{marginTop:12}} className="small">{message}</div>}
+        <div className="footer">UI proxies backend via <code>/api/proxy/*</code></div>
+      </div>
+    </div>
+  )
+}
+SIGNPAGE
+
+  # simple 404 fallback
+  _safe_write "$ROOT_DIR/services/signing-ui-next/pages/404.js" <<'NOTFOUND'
+export default function NotFound(){
+  return (
+    <div style={{padding:40}}>
+      <h2>Page not found</h2>
+      <p>Check your workflow link.</p>
+    </div>
+  )
+}
+NOTFOUND
+
+  # Dockerfile: build + start
+  _safe_write "$ROOT_DIR/services/signing-ui-next/Dockerfile" <<'DFNEXT'
+# Next.js Dockerfile (build then start)
+FROM node:18-slim AS builder
+WORKDIR /app
+COPY package.json package-lock.json* ./
+RUN npm ci --legacy-peer-deps || npm install
+COPY . .
+RUN npm run build
+
+FROM node:18-slim AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=builder /app/package.json /app/package.json
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/next.config.js ./next.config.js
+COPY --from=builder /app/styles ./styles
+COPY --from=builder /app/pages ./pages
+EXPOSE 3000
+CMD ["npm","start"]
+DFNEXT
+
+  # Add entry to docker-compose.override.yml
+  if [ -f "$ROOT_DIR/docker-compose.override.yml" ]; then
+    if ! grep -q "signing-ui-next" "$ROOT_DIR/docker-compose.override.yml"; then
+      cat >> "$ROOT_DIR/docker-compose.override.yml" <<'YAML'
+  signing-ui-next:
+    build:
+      context: ./services/signing-ui-next
+      dockerfile: Dockerfile
+    container_name: signing-ui-next
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_DOCSIGN_URL=${NEXT_PUBLIC_DOCSIGN_URL:-http://docsign:8000}
+    depends_on:
+      - docsign
+YAML
+      echo -e "${GREEN}✓ docker-compose.override.yml updated with signing-ui-next${NC}"
+    else
+      echo -e "${YELLOW}signing-ui-next already present in docker-compose.override.yml — skipped${NC}"
+    fi
+  else
+    _safe_write "$ROOT_DIR/docker-compose.override.yml" <<'YAMLNEW'
+version: '3.9'
+
+services:
+  signing-ui-next:
+    build:
+      context: ./services/signing-ui-next
+      dockerfile: Dockerfile
+    container_name: signing-ui-next
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_DOCSIGN_URL=${NEXT_PUBLIC_DOCSIGN_URL:-http://docsign:8000}
+    depends_on:
+      - docsign
+YAMLNEW
+    echo -e "${GREEN}✓ docker-compose.override.yml created and signing-ui-next added${NC}"
+  fi
+
+  echo -e "${GREEN}✓ Next.js Signing UI created (services/signing-ui-next)${NC}"
+  echo -e "${BLUE}To run locally (dev): cd services/signing-ui-next && npm install && npm run dev -p 3000${NC}"
+  echo -e "${BLUE}To run with Docker Compose:${NC}"
+  echo "  docker-compose build signing-ui-next"
+  echo "  docker-compose up -d signing-ui-next"
+  echo -e "${BLUE}Access UI at http://localhost:3000 (after compose up)${NC}"
+
+  cd "$ROOT_DIR" || true
+}
+
+create_nextjs_signing_ui
+
+echo -e "${GREEN}Block 6 installed: Next.js Signing UI + proxy + Dockerfile + compose wiring.${NC}"
+```
+# ==============================================================================
+# ALL-IN-ONE: AI Platform Superstack — BLOCK 7
+# API Gateway (FastAPI) with routing, JWT auth (optional), Redis rate limiting,
+# health aggregation and proxying for internal services.
+#
+# Paste this block immediately after previous blocks in your `all-in-one.sh`.
+#
+# Features:
+# - Async reverse proxy to backend services (stt-service, docsign, notifications, llm-engine, etc.)
+# - Aggregated /health endpoint that checks dependent services
+# - Optional JWT verification: set GATEWAY_JWT_SECRET to enable token validation
+# - Redis-backed rate limiting per IP or per-subject (configurable)
+# - Basic request logging and simple metrics counters (in-memory)
+# - Dockerfile + requirements + docker-compose.override.yml wiring
+#
+# Notes:
+# - For production-grade gateway please use a dedicated gateway (Traefik/NGINX/Envoy) or add more robust tracing.
+# - This gateway is intended as a developer-friendly API façade to unify internal endpoints.
+# ==============================================================================
+
+# ensure helper exists
+if ! declare -f _safe_write >/dev/null 2>&1; then
+  echo "Error: _safe_write helper not found. Paste Block 1..6 first."
+  exit 1
+fi
+
+create_api_gateway() {
+  echo -e "${YELLOW}Creating API Gateway service...${NC}"
+  mkdir -p "$ROOT_DIR/services/gateway"
+
+  # requirements
+  _safe_write "$ROOT_DIR/services/gateway/requirements.txt" <<'REQ'
+fastapi>=0.95.0
+uvicorn[standard]>=0.21.0
+httpx>=0.24.0
+python-dotenv>=1.0.0
+pyjwt>=2.8.0
+redis>=4.5.0
+pydantic>=2.0
+REQ
+
+  # Dockerfile
+  _safe_write "$ROOT_DIR/services/gateway/Dockerfile" <<'DFGATE'
+FROM python:3.11-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    netcat \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
+COPY . .
+EXPOSE 80
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "80", "--workers", "1"]
+DFGATE
+
+  # main.py (gateway implementation)
+  _safe_write "$ROOT_DIR/services/gateway/main.py" <<'PYGATE'
+"""
+API Gateway (FastAPI)
+ - Proxy /api/{service}/{path...} to internal services
+ - Aggregated /health that calls services' /health endpoints
+ - Optional JWT validation (GATEWAY_JWT_SECRET)
+ - Redis rate limiting (sliding window)
+"""
+
+import os
+import time
+import logging
+import asyncio
+from typing import List
+from fastapi import FastAPI, Request, HTTPException, status, Response
+from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+import httpx
+import jwt
+from dotenv import load_dotenv
+import redis.asyncio as aioredis
+
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
+
+# Config via env
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
+GATEWAY_JWT_SECRET = os.getenv("GATEWAY_JWT_SECRET", "")
+RATE_LIMIT_PER_MIN = int(os.getenv("GATEWAY_RATE_PER_MIN", "120"))  # requests per minute per key
+RATE_LIMIT_KEY_TYPE = os.getenv("GATEWAY_RATE_KEY_TYPE", "ip")  # ip | sub (JWT subject) | api_key
+
+# Map logical service names to internal URLs
+SERVICE_MAP = {
+    "stt": os.getenv("STT_SERVICE_URL", "http://stt-service:8000"),
+    "docsign": os.getenv("DOCSIGN_SERVICE_URL", "http://docsign:8000"),
+    "documents": os.getenv("DOCUMENTS_SERVICE_URL", "http://documents-service:8000"),
+    "notifications": os.getenv("NOTIFICATIONS_SERVICE_URL", "http://notifications:8000"),
+    "llm": os.getenv("LLM_SERVICE_URL", "http://llm-engine:8000"),
+    "eleven": os.getenv("ELEVEN_SERVICE_URL", "http://elevenlabs-service:8000"),
+    "auth": os.getenv("AUTH_SERVICE_URL", "http://auth-service:8000"),
+}
+
+app = FastAPI(title="API Gateway")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+logger = logging.getLogger("gateway")
+logging.basicConfig(level=logging.INFO)
+
+# Async Redis client
+redis = aioredis.from_url(REDIS_URL, decode_responses=True)
+
+# Simple in-memory metrics
+metrics = {
+    "requests_total": 0,
+    "responses_2xx": 0,
+    "responses_4xx": 0,
+    "responses_5xx": 0
+}
+
+# ------------------------
+# Rate limiting helpers
+# ------------------------
+async def rate_limit_key(request: Request):
+    if RATE_LIMIT_KEY_TYPE == "ip":
+        client_host = request.client.host if request.client else "anon"
+        return f"rl:ip:{client_host}"
+    elif RATE_LIMIT_KEY_TYPE == "sub":
+        # attempt to extract JWT subject
+        try:
+            token = (request.headers.get("authorization") or "").split("Bearer ")[-1]
+            decoded = jwt.decode(token, GATEWAY_JWT_SECRET, algorithms=["HS256"]) if token and GATEWAY_JWT_SECRET else {}
+            sub = decoded.get("sub", "anon")
+            return f"rl:sub:{sub}"
+        except Exception:
+            return "rl:anon"
+    else:
+        return "rl:anon"
+
+async def is_rate_limited(key: str):
+    # sliding window using redis INCR with EXPIRE
+    now = int(time.time())
+    window = 60  # seconds
+    key_ts = f"{key}:{now // window}"
+    count = await redis.incr(key_ts)
+    if count == 1:
+        await redis.expire(key_ts, window + 5)
+    return count > RATE_LIMIT_PER_MIN
+
+# ------------------------
+# JWT validation
+# ------------------------
+def validate_jwt(token: str):
+    if not GATEWAY_JWT_SECRET:
+        return None
+    try:
+        payload = jwt.decode(token, GATEWAY_JWT_SECRET, algorithms=["HS256"])
+        return payload
+    except jwt.PyJWTError as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {e}")
+
+# ------------------------
+# Aggregated health endpoint
+# ------------------------
+@app.get("/health")
+async def health():
+    # Check local services from SERVICE_MAP asynchronously with timeout
+    async def check(url: str):
+        try:
+            async with httpx.AsyncClient(timeout=4.0) as client:
+                r = await client.get(f"{url}/health")
+                if r.status_code == 200:
+                    return {"url": url, "ok": True, "status": r.json()}
+                else:
+                    return {"url": url, "ok": False, "status_code": r.status_code}
+        except Exception as e:
+            return {"url": url, "ok": False, "error": str(e)}
+
+    tasks = [check(u) for u in SERVICE_MAP.values()]
+    results = await asyncio.gather(*tasks)
+    overall = all(r.get("ok") for r in results)
+    return {"status": "healthy" if overall else "degraded", "services": results}
+
+# ------------------------
+# Proxy implementation
+# ------------------------
+@app.api_route("/api/{service}/{path:path}", methods=["GET","POST","PUT","PATCH","DELETE","OPTIONS"])
+async def proxy(service: str, path: str, request: Request):
+    metrics["requests_total"] += 1
+
+    # validate service
+    if service not in SERVICE_MAP:
+        raise HTTPException(status_code=404, detail="Unknown service")
+
+    target_base = SERVICE_MAP[service].rstrip("/")
+    forward_url = f"{target_base}/{path}"
+
+    # rate limiting
+    key = await rate_limit_key(request)
+    if await is_rate_limited(key):
+        metrics["responses_4xx"] += 1
+        raise HTTPException(status_code=429, detail="Rate limit exceeded")
+
+    # optional auth
+    auth_header = request.headers.get("authorization")
+    if GATEWAY_JWT_SECRET:
+        if not auth_header or not auth_header.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Missing Authorization header")
+        token = auth_header.split("Bearer ")[-1]
+        validate_jwt(token)
+
+    # build forwarded request
+    method = request.method
+    headers = dict(request.headers)
+    # remove host to avoid host header conflicts
+    headers.pop("host", None)
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            # stream body
+            body = await request.body()
+            resp = await client.request(method, forward_url, headers=headers, content=body, params=request.query_params)
+            # stream response back
+            content = resp.content
+            response = Response(content=content, status_code=resp.status_code, headers=dict(resp.headers))
+            if 200 <= resp.status_code < 300:
+                metrics["responses_2xx"] += 1
+            elif 400 <= resp.status_code < 500:
+                metrics["responses_4xx"] += 1
+            else:
+                metrics["responses_5xx"] += 1
+            return response
+    except httpx.RequestError as e:
+        metrics["responses_5xx"] += 1
+        raise HTTPException(status_code=502, detail=str(e))
+
+# ------------------------
+# Simple metrics endpoint
+# ------------------------
+@app.get("/metrics")
+async def get_metrics():
+    return metrics
+
+# ------------------------
+# Root route
+# ------------------------
+@app.get("/")
+async def root():
+    return {"message":"API Gateway", "services": list(SERVICE_MAP.keys())}
+PYGATE
+
+  # Compose override to add gateway service
+  if [ -f "$ROOT_DIR/docker-compose.override.yml" ]; then
+    if ! grep -q "gateway:" "$ROOT_DIR/docker-compose.override.yml"; then
+      cat >> "$ROOT_DIR/docker-compose.override.yml" <<'YAML'
+  gateway:
+    build:
+      context: ./services/gateway
+      dockerfile: Dockerfile
+    container_name: gateway
+    ports:
+      - "8080:80"
+    environment:
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - GATEWAY_JWT_SECRET=${GATEWAY_JWT_SECRET:-}
+      - GATEWAY_RATE_PER_MIN=${GATEWAY_RATE_PER_MIN:-120}
+      - GATEWAY_RATE_KEY_TYPE=${GATEWAY_RATE_KEY_TYPE:-ip}
+    depends_on:
+      - redis
+YAML
+      echo -e "${GREEN}✓ gateway appended to docker-compose.override.yml${NC}"
+    else
+      echo -e "${YELLOW}gateway already exists in docker-compose.override.yml — skipped${NC}"
+    fi
+  else
+    _safe_write "$ROOT_DIR/docker-compose.override.yml" <<'YAMLNEW'
+version: '3.9'
+services:
+  gateway:
+    build:
+      context: ./services/gateway
+      dockerfile: Dockerfile
+    container_name: gateway
+    ports:
+      - "8080:80"
+    environment:
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+YAMLNEW
+    echo -e "${GREEN}✓ docker-compose.override.yml created with gateway service${NC}"
+  fi
+
+  echo -e "${GREEN}✓ API Gateway service created (services/gateway){NC}"
+  echo -e "${BLUE}To build and run the gateway:${NC}"
+  echo "  docker-compose build gateway"
+  echo "  docker-compose up -d gateway"
+}
+
+create_api_gateway
+
+echo -e "${GREEN}Block 7 added: API Gateway with proxy, health aggregation, JWT validation (optional), and rate limiting.${NC}"
+```bash
+# ==============================================================================
+# ALL-IN-ONE: AI Platform Superstack — BLOCK 8A
+# Full STT Model API (CPU-only) with streaming websocket support
+#
+# Paste this block after previous blocks in your `all-in-one.sh`.
+# This block creates a new service: services/stt-advanced
+# - HTTP POST /health
+# - HTTP POST /api/stt/transcribe  (multipart file OR JSON base64)
+# - WebSocket /ws/transcribe       (send base64 chunks, server returns partial/final transcripts)
+# - CPU-only inference using transformers Whisper + torchaudio (small model by default)
+# - Concurrency guarded by asyncio.Lock to avoid model contention
+# - Dockerfile optimized for CPU (same pattern as previous STT)
+# - docker-compose.override.yml entry for stt-advanced (port 8020)
+#
+# IMPORTANT NOTES:
+# - This service is heavy (torch/torchaudio/transformers). Use small models (whisper-tiny)
+#   for reasonable CPU performance. If you want a lighter dev mode, remove torch/torchaudio
+#   from requirements; the service will start and /health will report model not loaded.
+# - WebSocket streaming here is chunk-based: client sends JSON messages with fields:
+#     { "chunk_base64": "...", "eof": false }
+#   When eof=true, the server will run final transcription and return {"final": "..."}.
+#   The server may also return intermediate partial transcriptions periodically.
+#
+# No GPU/CUDA libraries are installed or required by the Dockerfile — CPU only.
+# ==============================================================================
+
+# ensure helper exists
+if ! declare -f _safe_write >/dev/null 2>&1; then
+  echo "Error: _safe_write helper not found. Paste Block 1..7 first."
+  exit 1
+fi
+
+create_stt_advanced() {
+  echo -e "${YELLOW}Creating STT-Advanced service (services/stt-advanced)...${NC}"
+  mkdir -p "$ROOT_DIR/services/stt-advanced"
+
+  # requirements
+  _safe_write "$ROOT_DIR/services/stt-advanced/requirements.txt" <<'REQ'
+fastapi>=0.95.0
+uvicorn[standard]>=0.21.0
+python-multipart>=0.0.6
+transformers>=4.30.0
+torch>=2.2.2
+torchaudio>=2.2.2
+soundfile>=0.12.1
+httpx>=0.24.0
+python-dotenv>=1.0.0
+pydantic>=2.0
+REQ
+
+  # Dockerfile (CPU only)
+  _safe_write "$ROOT_DIR/services/stt-advanced/Dockerfile" <<'DF'
+# STT-Advanced Dockerfile (CPU-only)
+FROM python:3.11-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    ffmpeg \
+    libsndfile1 \
+    libjpeg-dev \
+    zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    ffmpeg \
-    libsndfile1 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# If you have prebuilt torch/torchaudio wheels, consider --find-links for faster installs
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt
+
 COPY . .
 
-# Create models directory
-RUN mkdir -p /root/.cache/whisper
+RUN adduser --disabled-password --gecos "" appuser && chown -R appuser /app
+USER appuser
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+EXPOSE 8000
 
-# Run the service
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
-EOT
+DF
 
-    # Create main.py
-    cat > "$ROOT_DIR/services/stt/main.py" << 'EOT'
-from fastapi import FastAPI, UploadFile, HTTPException, status, WebSocket
-from fastapi.middleware.cors import CORSMiddleware
-import torch
-from transformers import WhisperProcessor, WhisperForConditionalGeneration
-import torchaudio
-import io
+  # main.py
+  _safe_write "$ROOT_DIR/services/stt-advanced/main.py" <<'PY'
+"""
+STT-Advanced Service (CPU-only) with HTTP + WebSocket streaming
+
+Endpoints:
+ - GET  /health
+ - POST /api/stt/transcribe  (multipart file OR JSON { "audio_base64": "...", "filename": "..." })
+ - WebSocket /ws/transcribe  (send JSON messages {"chunk_base64": "...", "eof": false})
+
+Design:
+ - Uses transformers WhisperProcessor + WhisperForConditionalGeneration
+ - Forces device to CPU (torch.device("cpu"))
+ - Uses torchaudio to load audio buffers and resamples to 16000 Hz
+ - Protects model with asyncio.Lock to avoid concurrent inference requests
+ - Provides lightweight intermediate partial transcripts by re-transcribing accumulated audio
+"""
 import os
+import io
+import base64
 import logging
-import aiohttp
-from typing import Optional
+import asyncio
+from typing import Optional, Dict, Any
+from fastapi import FastAPI, UploadFile, File, HTTPException, status, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="Speech-to-Text Service with Ollama")
+# optional heavy imports
+try:
+    import torch
+    import torchaudio
+    from transformers import WhisperProcessor, WhisperForConditionalGeneration
+except Exception as exc:
+    torch = None
+    torchaudio = None
+    WhisperProcessor = None
+    WhisperForConditionalGeneration = None
+    IMPORT_ERROR = str(exc)
+else:
+    IMPORT_ERROR = None
 
-# Configure CORS
+app = FastAPI(title="STT-Advanced (CPU)")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*"]
 )
 
-# Configuration
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434")
-MODEL_NAME = os.getenv("WHISPER_MODEL", "tiny")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen:4b")
-
-# Configure logging
+logger = logging.getLogger("stt-advanced")
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
-# Model and processor
-model = None
-processor = None
+MODEL = None
+PROCESSOR = None
+MODEL_NAME = os.getenv("STT_MODEL", os.getenv("STT_MODEL_NAME", "openai/whisper-tiny"))
+MODEL_CACHE = os.getenv("MODEL_PATH", "/root/.cache/models")
+DEVICE = torch.device("cpu") if torch else None
 
-class HealthResponse(BaseModel):
-    status: str
-    model_loaded: bool
-    ollama_connected: bool
+# guard to serialize model access
+inference_lock = asyncio.Lock()
 
-async def check_ollama_connection() -> bool:
+# Streaming buffer per websocket connection
+# maps connection id -> bytearray
+STREAM_BUFFERS: Dict[str, bytearray] = {}
+
+# config
+PARTIAL_TRANSCRIBE_BYTES = int(os.getenv("STT_PARTIAL_BYTES", "160000"))  # when to run a partial on accumulated bytes
+
+
+class Base64Req(BaseModel):
+    audio_base64: str
+    filename: Optional[str] = "upload.wav"
+    language: Optional[str] = "en"
+
+
+@app.on_event("startup")
+def load_model():
+    global MODEL, PROCESSOR
+    if IMPORT_ERROR:
+        logger.warning("Model libraries not available: %s", IMPORT_ERROR)
+        return
+
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{OLLAMA_URL}/api/tags") as response:
-                return response.status == 200
+        logger.info("Loading model '%s' (cache=%s) onto CPU", MODEL_NAME, MODEL_CACHE)
+        PROCESSOR = WhisperProcessor.from_pretrained(MODEL_NAME, cache_dir=MODEL_CACHE)
+        MODEL = WhisperForConditionalGeneration.from_pretrained(MODEL_NAME, cache_dir=MODEL_CACHE)
+        if torch and MODEL is not None:
+            MODEL.to(DEVICE)
+        logger.info("Model loaded successfully")
+    except Exception as e:
+        logger.exception("Failed to load model: %s", e)
+        MODEL = None
+        PROCESSOR = None
+
+
+@app.get("/health")
+async def health():
+    return {
+        "status": "healthy" if MODEL is not None and PROCESSOR is not None else "model not loaded",
+        "model": MODEL_NAME,
+        "import_error": IMPORT_ERROR or ""
+    }
+
+
+def read_audio_bytes(audio_bytes: bytes):
+    """Load audio bytes to waveform (tensor) and sample rate using torchaudio"""
+    if torchaudio is None:
+        raise RuntimeError("torchaudio not available")
+    bio = io.BytesIO(audio_bytes)
+    waveform, sr = torchaudio.load(bio)
+    # convert to mono
+    if waveform.dim() > 1 and waveform.size(0) > 1:
+        waveform = waveform.mean(dim=0, keepdim=True)
+    # resample to 16000 if needed
+    if sr != 16000:
+        resampler = torchaudio.transforms.Resample(orig_freq=sr, new_freq=16000)
+        waveform = resampler(waveform)
+        sr = 16000
+    return waveform.squeeze(0).numpy(), sr
+
+
+async def transcribe_numpy(waveform_np, sr):
+    """
+    Run model inference in a serialized manner using inference_lock.
+    Returns transcription string.
+    """
+    if IMPORT_ERROR:
+        raise RuntimeError(f"Model dependencies missing: {IMPORT_ERROR}")
+    if MODEL is None or PROCESSOR is None:
+        raise RuntimeError("Model not loaded")
+
+    # prepare features
+    inputs = PROCESSOR(waveform_np, sampling_rate=sr, return_tensors="pt")
+    # move tensors to CPU explicitly
+    inputs = {k: v.to(DEVICE) for k, v in inputs.items()}
+
+    async with inference_lock:
+        # run generation synchronously but guarded
+        with torch.no_grad():
+            predicted_ids = MODEL.generate(**inputs)
+        transcription = PROCESSOR.batch_decode(predicted_ids, skip_special_tokens=True)[0]
+    return transcription
+
+
+@app.post("/api/stt/transcribe")
+async def transcribe(file: UploadFile = File(None), payload: Base64Req = None, language: str = "en"):
+    """
+    Accept either file upload or JSON base64 body.
+    """
+    if IMPORT_ERROR:
+        raise HTTPException(status_code=503, detail=f"Missing dependencies: {IMPORT_ERROR}")
+
+    if MODEL is None or PROCESSOR is None:
+        raise HTTPException(status_code=503, detail="Model not loaded")
+
+    audio_bytes = None
+    try:
+        if file:
+            audio_bytes = await file.read()
+        elif payload and payload.audio_base64:
+            audio_bytes = base64.b64decode(payload.audio_base64)
+        else:
+            raise HTTPException(status_code=400, detail="No audio provided")
+
+        waveform_np, sr = read_audio_bytes(audio_bytes)
+        transcription = await transcribe_numpy(waveform_np, sr)
+        return {"transcription": transcription, "language": language}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Transcription failure")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------
+# WebSocket streaming endpoint
+# ---------------------------
+# Protocol:
+# - Client sends JSON messages:
+#   { "chunk_base64": "<base64 audio bytes>", "eof": false }  // append chunk
+#   { "eof": true }                                           // mark end
+# - Server responds with JSON messages:
+#   { "partial": "interim text" }
+#   { "final": "final transcription" }
+#
+# The server will attempt to run partial transcriptions every time accumulated bytes exceed PARTIAL_TRANSCRIBE_BYTES.
+#
+@app.websocket("/ws/transcribe")
+async def websocket_transcribe(ws: WebSocket):
+    await ws.accept()
+    conn_id = str(id(ws))
+    STREAM_BUFFERS[conn_id] = bytearray()
+    try:
+        while True:
+            msg = await ws.receive_text()
+            # parse JSON
+            try:
+                import json
+                payload = json.loads(msg)
+            except Exception:
+                await ws.send_text(json.dumps({"error": "invalid_json"}))
+                continue
+
+            # eof handling
+            if payload.get("eof"):
+                # final transcription on accumulated buffer
+                audio_bytes = bytes(STREAM_BUFFERS.get(conn_id, b""))
+                if not audio_bytes:
+                    await ws.send_text(json.dumps({"error": "no_audio"}))
+                    await ws.close()
+                    break
+                try:
+                    waveform_np, sr = read_audio_bytes(audio_bytes)
+                    text = await transcribe_numpy(waveform_np, sr)
+                    await ws.send_text(json.dumps({"final": text}))
+                except Exception as e:
+                    await ws.send_text(json.dumps({"error": str(e)}))
+                # cleanup and close
+                STREAM_BUFFERS.pop(conn_id, None)
+                await ws.close()
+                break
+
+            # append chunk if provided
+            chunk_b64 = payload.get("chunk_base64")
+            if chunk_b64:
+                try:
+                    chunk = base64.b64decode(chunk_b64)
+                    STREAM_BUFFERS[conn_id].extend(chunk)
+                except Exception as e:
+                    await ws.send_text(json.dumps({"error": f"bad_chunk: {e}"}))
+                    continue
+
+                # if accumulated size exceeds threshold, run a partial transcription
+                if len(STREAM_BUFFERS[conn_id]) >= PARTIAL_TRANSCRIBE_BYTES:
+                    try:
+                        audio_bytes = bytes(STREAM_BUFFERS[conn_id])
+                        waveform_np, sr = read_audio_bytes(audio_bytes)
+                        partial = await transcribe_numpy(waveform_np, sr)
+                        await ws.send_text(json.dumps({"partial": partial}))
+                    except Exception as e:
+                        await ws.send_text(json.dumps({"error": f"partial_failed: {e}"}))
+                        # continue receiving chunks
+            else:
+                # unknown message shape
+                await ws.send_text(json.dumps({"error": "missing_chunk_or_eof"}))
+
+    except WebSocketDisconnect:
+        # client disconnected
+        STREAM_BUFFERS.pop(conn_id, None)
+    except Exception as e:
+        STREAM_BUFFERS.pop(conn_id, None)
+        logger.exception("WebSocket error: %s", e)
+        try:
+            await ws.send_text(json.dumps({"error": str(e)}))
+            await ws.close()
+        except Exception:
+            pass
+PY
+
+  # docker-compose override: add stt-advanced service
+  if [ -f "$ROOT_DIR/docker-compose.override.yml" ]; then
+    if ! grep -q "stt-advanced" "$ROOT_DIR/docker-compose.override.yml"; then
+      cat >> "$ROOT_DIR/docker-compose.override.yml" <<'YAML'
+  stt-advanced:
+    build:
+      context: ./services/stt-advanced
+      dockerfile: Dockerfile
+    container_name: stt-advanced
+    ports:
+      - "8020:8000"
+    environment:
+      - STT_MODEL=${STT_MODEL:-openai/whisper-tiny}
+      - MODEL_PATH=${MODEL_PATH:-/root/.cache/models}
+YAML
+      echo -e "${GREEN}✓ stt-advanced appended to docker-compose.override.yml${NC}"
+    else
+      echo -e "${YELLOW}stt-advanced already present in docker-compose.override.yml — skipped${NC}"
+    fi
+  else
+    _safe_write "$ROOT_DIR/docker-compose.override.yml" <<'YAMLNEW'
+version: '3.9'
+services:
+  stt-advanced:
+    build:
+      context: ./services/stt-advanced
+      dockerfile: Dockerfile
+    container_name: stt-advanced
+    ports:
+      - "8020:8000"
+    environment:
+      - STT_MODEL=${STT_MODEL:-openai/whisper-tiny}
+      - MODEL_PATH=${MODEL_PATH:-/root/.cache/models}
+YAMLNEW
+    echo -e "${GREEN}✓ docker-compose.override.yml created with stt-advanced${NC}"
+  fi
+
+  echo -e "${GREEN}✓ STT-Advanced created under services/stt-advanced${NC}"
+  echo -e "${BLUE}To build and run the service:${NC}"
+  echo "  docker-compose build stt-advanced --pull"
+  echo "  docker-compose up -d stt-advanced"
+  echo ""
+  echo -e "${BLUE}HTTP health: http://localhost:8020/health${NC}"
+  echo -e "${BLUE}HTTP transcribe: http://localhost:8020/api/stt/transcribe (multipart or base64 json)${NC}"
+  echo -e "${BLUE}WebSocket: ws://localhost:8020/ws/transcribe (send JSON chunks)${NC}"
+}
+
+create_stt_advanced
+
+echo -e "${GREEN}Block 8A installed: STT-Advanced (HTTP + WebSocket streaming, CPU-only).${NC}"
+```
+# ==============================================================================
+# ALL-IN-ONE: AI Platform Superstack — BLOCK 9
+# Full Auth Service (Postgres-backed, JWT + refresh tokens, CPU-only)
+#
+# Paste this block after previous blocks in your `all-in-one.sh`.
+#
+# Features:
+# - PostgreSQL-backed users (migrations created earlier include `users` table)
+# - Register (POST /register) — stores email, full_name, password_hash
+# - Login (POST /login) — verifies password, returns access_token (JWT) + refresh_token
+# - Refresh (POST /refresh) — exchange refresh token for new access token
+# - Protected endpoint example (GET /me) — requires Authorization: Bearer <access_token>
+# - Password hashing using bcrypt
+# - Token signing using HS256 (SECRET_KEY env)
+# - Dockerfile + requirements
+# - Compose override wiring (exposes port 8001)
+#
+# Notes:
+# - This is intentionally minimal and secure for a dev environment.
+# - For production: enable HTTPS, rotate keys, store refresh tokens in DB with revocation,
+#   add rate limiting, account lockouts, email verification, password reset flows, etc.
+# ==============================================================================
+
+# Ensure helper exists
+if ! declare -f _safe_write >/dev/null 2>&1; then
+  echo "Error: _safe_write helper not found. Paste Block 1..8 first."
+  exit 1
+fi
+
+create_auth_full() {
+  echo -e "${YELLOW}Creating full Auth service (services/auth)...${NC}"
+  mkdir -p "$ROOT_DIR/services/auth"
+
+  # requirements
+  _safe_write "$ROOT_DIR/services/auth/requirements.txt" <<'REQ'
+fastapi>=0.95.0
+uvicorn[standard]>=0.21.0
+python-dotenv>=1.0.0
+psycopg2-binary>=2.9
+bcrypt>=4.0.1
+pyjwt>=2.8.0
+pydantic>=2.0
+REQ
+
+  # Dockerfile
+  _safe_write "$ROOT_DIR/services/auth/Dockerfile" <<'DFAUTH'
+FROM python:3.11-slim
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends gcc libpq-dev && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
+COPY . .
+EXPOSE 8000
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+DFAUTH
+
+  # main.py implementing auth logic
+  _safe_write "$ROOT_DIR/services/auth/main.py" <<'PYAUTH'
+"""
+Auth Service (Postgres-backed)
+
+Endpoints:
+ - GET  /health
+ - POST /register   { "email", "password", "full_name" }
+ - POST /login      { "email", "password" } -> { access_token, refresh_token, token_type }
+ - POST /refresh    { "refresh_token" } -> { access_token }
+ - GET  /me         (protected) -> user info
+
+Configuration via environment (.env):
+ - SECRET_KEY (required)  : used to sign JWTs
+ - ACCESS_TOKEN_EXPIRE_MINUTES (default 15)
+ - REFRESH_TOKEN_EXPIRE_DAYS (default 7)
+ - DATABASE_URL: full postgres URL or will be assembled from POSTGRES_* env vars
+"""
+
+import os
+import time
+import logging
+from typing import Optional
+from datetime import datetime, timedelta
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, Depends, status, Request
+from pydantic import BaseModel, EmailStr
+import psycopg2
+from psycopg2.extras import RealDictCursor
+import bcrypt
+import jwt
+from dotenv import load_dotenv
+
+# Load env from project .env
+load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
+
+# Config
+SECRET_KEY = os.getenv("SECRET_KEY", "dev_secret_change_me")
+ACCESS_EXPIRE_MIN = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
+REFRESH_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+
+POSTGRES_USER = os.getenv("POSTGRES_USER", "ai_user")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "ChangeMePostgres123!")
+POSTGRES_DB = os.getenv("POSTGRES_DB", "ai_platform")
+POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
+POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
+DATABASE_URL = os.getenv("DATABASE_URL") or f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+
+ALGORITHM = "HS256"
+
+app = FastAPI(title="Auth Service")
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("auth")
+
+# DB helper
+def get_db_conn():
+    return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+
+# Pydantic models
+class RegisterReq(BaseModel):
+    email: EmailStr
+    password: str
+    full_name: Optional[str] = None
+
+class LoginReq(BaseModel):
+    email: EmailStr
+    password: str
+
+class TokenResp(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    expires_in: int
+
+class RefreshReq(BaseModel):
+    refresh_token: str
+
+# Utility functions
+def hash_password(plain: str) -> str:
+    return bcrypt.hashpw(plain.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+def verify_password(plain: str, hashed: str) -> bool:
+    try:
+        return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
     except Exception:
         return False
 
-@app.on_event("startup")
-async def load_model():
-    global model, processor
-    try:
-        model_path = os.getenv("MODEL_PATH", "/root/.cache/whisper")
-        
-        logger.info(f"Loading Whisper model: {MODEL_NAME}")
-        model = WhisperForConditionalGeneration.from_pretrained(
-            f"openai/whisper-{MODEL_NAME}",
-            cache_dir=model_path,
-            torch_dtype=torch.float32,
-            low_cpu_mem_usage=True,
-        )
-        processor = WhisperProcessor.from_pretrained(
-            f"openai/whisper-{MODEL_NAME}",
-            cache_dir=model_path
-        )
-        logger.info("Model and processor loaded successfully")
-    except Exception as e:
-        logger.error(f"Error loading model: {str(e)}")
-        raise
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_EXPIRE_MIN))
+    to_encode.update({"exp": expire, "type": "access"})
+    token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return token
 
+def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + (expires_delta or timedelta(days=REFRESH_EXPIRE_DAYS))
+    to_encode.update({"exp": expire, "type": "refresh"})
+    token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return token
+
+def decode_token(token: str):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.PyJWTError as e:
+        raise HTTPException(status_code=401, detail=f"Token error: {e}")
+
+# Endpoints
 @app.get("/health")
-async def health_check():
-    ollama_connected = await check_ollama_connection()
-    return {
-        "status": "healthy" if model is not None else "model not loaded",
-        "model_loaded": model is not None,
-        "ollama_connected": ollama_connected
-    }
-
-@app.post("/transcribe")
-async def transcribe_audio(
-    audio: UploadFile,
-    language: str = "en",
-    post_process: bool = False
-):
-    if not model or not processor:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Model not loaded"
-        )
-    
+def health():
     try:
-        # Read and process audio
-        content = await audio.read()
-        audio_data, sample_rate = torchaudio.load(io.BytesIO(content), format=audio.filename.split('.')[-1])
-        
-        # Convert to mono if stereo
-        if len(audio_data.shape) > 1 and audio_data.shape[0] > 1:
-            audio_data = torch.mean(audio_data, dim=0, keepdim=True)
-        
-        # Resample if needed
-        if sample_rate != 16000:
-            resampler = torchaudio.transforms.Resample(orig_freq=sample_rate, new_freq=16000)
-            audio_data = resampler(audio_data)
-        
-        # Get input features
-        input_features = processor(
-            audio_data.squeeze().numpy(),
-            sampling_rate=16000,
-            return_tensors="pt"
-        ).input_features
-        
-        # Generate token ids
-        predicted_ids = model.generate(input_features)
-        
-        # Decode token ids to text
-        transcription = processor.batch_decode(predicted_ids, skip_special_tokens=True)[0]
-        
-        return {
-            "transcription": transcription,
-            "language": language,
-            "model": f"whisper-{MODEL_NAME}",
-            "post_processed": post_process
-        }
-    
+        conn = get_db_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT 1")
+        conn.close()
+        return {"status": "healthy", "db": True}
     except Exception as e:
-        logger.error(f"Transcription error: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error processing audio: {str(e)}"
-        )
+        return {"status": "degraded", "db": False, "error": str(e)}
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-EOT
+@app.post("/register", status_code=201)
+def register(payload: RegisterReq):
+    hashed = hash_password(payload.password)
+    conn = get_db_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute("INSERT INTO users (email, full_name, password_hash) VALUES (%s, %s, %s) RETURNING id, email, full_name, created_at", (payload.email, payload.full_name, hashed))
+        user = cur.fetchone()
+        conn.commit()
+        return {"id": user["id"], "email": user["email"], "full_name": user["full_name"], "created_at": user["created_at"]}
+    except psycopg2.IntegrityError:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail="User already exists")
+    finally:
+        cur.close()
+        conn.close()
 
-    echo -e "${GREEN}STT service added successfully${NC}"
-    echo -e "${YELLOW}To use the STT service, add the following to your docker-compose.yml:${NC}"
-    cat << 'COMPOSE'
-  stt-service:
-    build: ./services/stt
-    container_name: stt-service
+@app.post("/login", response_model=TokenResp)
+def login(payload: LoginReq):
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT id, email, full_name, password_hash FROM users WHERE email = %s", (payload.email,))
+    user = cur.fetchone()
+    cur.close()
+    conn.close()
+    if not user or not verify_password(payload.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    access = create_access_token({"sub": user["email"], "user_id": user["id"]})
+    refresh = create_refresh_token({"sub": user["email"], "user_id": user["id"]})
+    return {"access_token": access, "refresh_token": refresh, "expires_in": ACCESS_EXPIRE_MIN * 60}
+
+@app.post("/refresh", response_model=TokenResp)
+def refresh_token(payload: RefreshReq):
+    payload_decoded = decode_token(payload.refresh_token)
+    if payload_decoded.get("type") != "refresh":
+        raise HTTPException(status_code=401, detail="Invalid token type")
+    email = payload_decoded.get("sub")
+    user_id = payload_decoded.get("user_id")
+    # Optionally: verify refresh token hasn't been revoked (DB)
+    access = create_access_token({"sub": email, "user_id": user_id})
+    refresh = create_refresh_token({"sub": email, "user_id": user_id})
+    return {"access_token": access, "refresh_token": refresh, "expires_in": ACCESS_EXPIRE_MIN * 60}
+
+# Dependency: get current user
+def get_current_user(request: Request):
+    auth: str = request.headers.get("authorization") or ""
+    if not auth.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing auth")
+    token = auth.split("Bearer ")[1]
+    data = decode_token(token)
+    if data.get("type") != "access":
+        raise HTTPException(status_code=401, detail="Invalid token type")
+    return {"email": data.get("sub"), "user_id": data.get("user_id")}
+
+@app.get("/me")
+def me(user = Depends(get_current_user)):
+    return {"email": user["email"], "user_id": user["user_id"]}
+PYAUTH
+
+  # Compose override: ensure auth service exists and uses DATABASE_URL env
+  if [ -f "$ROOT_DIR/docker-compose.override.yml" ]; then
+    if ! grep -q "auth-service" "$ROOT_DIR/docker-compose.override.yml"; then
+      cat >> "$ROOT_DIR/docker-compose.override.yml" <<'YAML'
+  auth-service:
+    build:
+      context: ./services/auth
+      dockerfile: Dockerfile
+    container_name: auth-service
     ports:
-      - "8000:8000"
+      - "8001:8000"
     environment:
-      - OLLAMA_URL=http://ollama:11434
-      - WHISPER_MODEL=tiny
-      - OLLAMA_MODEL=llama3
-    volumes:
-      - stt_models:/root/.cache/whisper
-    depends_on:
-      - ollama
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 8G
-
-# Add to volumes section:
-volumes:
-  ollama_data:
-  stt_models:
-COMPOSE
-}
-
-
-# Function to display the main menu
-show_menu() {
-    clear
-    echo -e "${BLUE}=== AI Platform Superstack Management ===${NC}"
-    echo -e "${GREEN}1.${NC} Setup and initialize all services"
-    echo -e "${GREEN}2.${NC} Build frontend applications"
-    echo -e "${GREEN}3.${NC} Start all services"
-    echo -e "${GREEN}4.${NC} Stop all services"
-    echo -e "${GREEN}5.${NC} View service status"
-    echo -e "${GREEN}6.${NC} View logs"
-    echo -e "${GREEN}7.${NC} Add STT Service with Ollama"
-    echo -e "${GREEN}0.${NC} Exit"
-    echo -e "\n${YELLOW}Select an option (0-7): ${NC}"
-}
-
-# Function to handle menu selection
-handle_menu_selection() {
-    local choice
-    read -r -p "" choice
-    case $choice in
-        1)
-            echo -e "\n${BLUE}=== Setting up and initializing all services ===${NC}"
-            echo -e "${YELLOW}Creating project directories...${NC}"
-            create_directories
-            echo -e "${YELLOW}Creating environment files...${NC}"
-            create_env_files
-            echo -e "${YELLOW}Creating docker-compose configuration...${NC}"
-            create_docker_compose
-            echo -e "${YELLOW}Creating service files...${NC}"
-            create_service_files
-            echo -e "${YELLOW}Creating service configurations...${NC}"
-            create_service_configs
-            create_missing_service_configs
-            echo -e "${GREEN}✓ All services have been set up successfully!${NC}"
-            echo -e "\n${YELLOW}To start the services, please run:${NC}"
-            echo "1. cd $ROOT_DIR"
-            echo "2. docker-compose up -d"
-            ;;
-        2)
-            echo -e "\n${BLUE}=== Building frontend applications ===${NC}"
-            build_frontend
-            ;;
-        3)
-            echo -e "\n${BLUE}=== Starting all services ===${NC}"
-            docker-compose up -d
-            echo -e "${GREEN}✓ Services started successfully${NC}"
-            ;;
-        4)
-            echo -e "\n${BLUE}=== Stopping all services ===${NC}"
-            docker-compose down
-            echo -e "${GREEN}✓ Services stopped successfully${NC}"
-            ;;
-        5)
-            echo -e "\n${BLUE}=== Service Status ===${NC}"
-            docker-compose ps
-            ;;
-        6)
-            show_logs_menu
-            ;;
-        7)
-            echo -e "\n${BLUE}=== Adding STT Service with Ollama ===${NC}"
-            add_stt_service
-            read -p "Press [Enter] to return to the main menu..."
-            ;;
-        0)
-            echo -e "\n${GREEN}Exiting... Goodbye!${NC}"
-            exit 0
-            ;;
-        *)
-            echo -e "\n${RED}Invalid option. Please try again.${NC}"
-            ;;
-    esac
-}
-
-# Function to show logs menu
-show_logs_menu() {
-    echo -e "\n${BLUE}=== View Logs ===${NC}"
-    echo -e "${GREEN}1.${NC} All services"
-    echo -e "${GREEN}2.${NC} Frontend services"
-    echo -e "${GREEN}3.${NC} Backend services"
-    echo -e "${GREEN}4.${NC} Database"
-    echo -e "${GREEN}5.${NC} Back to main menu"
-    echo -e "\n${YELLOW}Select an option (1-5): ${NC}"
-    
-    local log_choice
-    read -r -p "" log_choice
-    case $log_choice in
-        1)
-            docker-compose logs -f
-            ;;
-        2)
-            docker-compose logs -f realtime-transcriber eleven-labs-voice-agent
-            ;;
-        3)
-            docker-compose logs -f auth-service ocr-service asr-service tts-service voice-service docgen-service docsign-service rules-service
-            ;;
-        4)
-            docker-compose logs -f postgres redis
-            ;;
-        5)
-            return
-            ;;
-        *)
-            echo -e "\n${RED}Invalid option. Returning to main menu.${NC}"
-            ;;
-    esac
-    
-    # Return to logs menu after viewing logs
-    show_logs_menu
-}
-
-# Main menu loop
-while true; do
-    show_menu
-    handle_menu_selection
-    
-    # Pause to show the result before clearing the screen
-    echo -e "\n${YELLOW}Press any key to continue...${NC}"
-    read -n 1 -s -r
-    
-    # If user chose to view logs, don't clear the screen immediately
-    if [ "$choice" != "6" ] && [ "$log_choice" != "5" ]; then
-        clear
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-ai_user}:${POSTGRES_PASSWORD:-ChangeMePostgres123!}@postgres:5432/${POSTGRES_DB:-ai_platform}
+YAML
+      echo -e "${GREEN}✓ auth-service appended to docker-compose.override.yml${NC}"
+    else
+      echo -e "${YELLOW}auth-service already present in docker-compose.override.yml — skipped${NC}"
     fi
-done
+  else
+    _safe_write "$ROOT_DIR/docker-compose.override.yml" <<'YAMLNEW'
+version: '3.9'
+services:
+  auth-service:
+    build:
+      context: ./services/auth
+      dockerfile: Dockerfile
+    container_name: auth-service
+    ports:
+      - "8001:8000"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-ai_user}:${POSTGRES_PASSWORD:-ChangeMePostgres123!}@postgres:5432/${POSTGRES_DB:-ai_platform}
+YAMLNEW
+    echo -e "${GREEN}✓ docker-compose.override.yml created with auth-service${NC}"
+  fi
 
-# Run the main function if no arguments are provided
-if [ $# -eq 0 ]; then
-    main
-else
-    main "$@"
-fi
- 
+  echo -e "${GREEN}✓ Auth service created under services/auth (full implementation).${NC}"
+  echo -e "${BLUE}Steps to run:${NC}"
+  echo "  1) Ensure migrations were applied (services/migrations)."
+  echo "  2) docker-compose build auth-service"
+  echo "  3) docker-compose up -d auth-service"
+  echo -e "${BLUE}Health: http://localhost:8001/health"
+  echo -e "${BLUE}Register: POST http://localhost:8001/register { email, password, full_name }"
+  echo -e "${BLUE}Login: POST http://localhost:8001/login { email, password }"
+}
 
- 
- 
+create_auth_full
 
-# =============================
-# openapi.yaml (combined summary)
-# =============================
-cat > "$ROOT"/openapi.yaml << 'OPEN'
-openapi: 3.0.3
-info:
-  title: AI + Auth Superstack API
-  version: 1.0.0
-  description: |
-    # API Documentation
-    
-    Welcome to the AI Superstack API documentation. This API provides access to various AI services including authentication, messaging, and document processing.
-    
-    ## Base URL
-    All API endpoints are relative to `https://mint.weareupsyd.com`
-    
-    ## Authentication
-    Most endpoints require authentication. Include your JWT token in the `Authorization` header:
-    ```
-    Authorization: Bearer <your_token>
-    ```
-
-servers:
-  - url: https://mint.weareupsyd.com
-    description: Production server
-paths:
-  /auth/register: { post: { summary: Register user } }
-  /auth/login: { post: { summary: Login (magic, otp, push, whatsapp) } }
-  /auth/verify/magic: { get: { summary: Verify magic link } }
-  /auth/verify/otp: { post: { summary: Verify OTP } }
-  /api/links: { post: { summary: Create short link } }
-  /s/{code}: { get: { summary: Resolve short link } }
-  /api/messaging/email: { post: { summary: Send email } }
-  /api/messaging/whatsapp: { post: { summary: Send WhatsApp } }
-  /api/messaging/sms: { post: { summary: Send SMS } }
-  /api/push/vapid/public-key: { get: { summary: Get VAPID public key } }
-  /api/push/subscribe: { post: { summary: Subscribe device } }
-  /api/push/send: { post: { summary: Send push notification } }
-  /ai/ocr: { post: { summary: OCR raw } }
-  /ai/ocr/structured: { post: { summary: OCR structured (regex) } }
-  /ai/asr/stt: { post: { summary: Speech to text } }
-  /ai/tts: { post: { summary: Text to speech } }
-  /ai/voice/ws: { get: { summary: Voice WebSocket streaming } }
-  /ai/docgen/templates: { get: { summary: List templates } }
-  /ai/docgen/generate: { post: { summary: Generate document } }
-  /ai/docsign/sign: { post: { summary: Sign PDF (metadata) } }
-  /ai/rules/evaluate: { post: { summary: Evaluate rules } }
-OPEN
-
-# =============================
-# README
-# =============================
-cat > "$ROOT"/README.md << 'MD'
-# AI + Auth Superstack
-
-Run all services:
+echo -e "${GREEN}Block 9 installed: Auth service (Postgres-backed JWT + refresh tokens).${NC}"
 ```bash
-cd ai-superstack
-docker compose up --build -d
-```
+# ==============================================================================
+# ALL-IN-ONE: AI Platform Superstack — BLOCK 10
+# Notifications Service (Email + SMS + WhatsApp + Webhooks + Retry Queue)
+#
+# Paste this block after previous blocks in your `all-in-one.sh`.
+#
+# This service provides:
+# - POST /send/email
+# - POST /send/sms
+# - POST /send/whatsapp
+# - GET  /health
+# - Internal retry queue using Redis lists
+# - Background worker inside same container (async loop)
+# - Providers:
+#     - SMTP (email)
+#     - HTTP provider for SMS (generic)
+#     - Meta WhatsApp Cloud API (generic)
+# - All CPU-only, lightweight
+#
+# Feature set:
+# - Sender abstraction so you can replace providers later
+# - Delivery report ingestion via /webhook/<provider>
+# - Automatic retry on provider failure with exponential backoff
+# - Status stored in Redis (message:<id>)
+#
+# This block creates:
+#   services/notifications/
+#       main.py
+#       requirements.txt
+#       Dockerfile
+#   docker-compose.override.yml entry
+#
+# ==============================================================================
 
-## Access URLs
-- Gateway: http://localhost
-- PWA: http://localhost:8080
-- API Documentation: https://mint.weareupsyd.com/docs
+if ! declare -f _safe_write >/dev/null 2>&1; then
+  echo "Error: _safe_write helper missing — paste previous blocks first."
+  exit 1
+fi
+
+create_notifications_service() {
+  echo -e "${YELLOW}Creating notifications service...${NC}"
+  mkdir -p "$ROOT_DIR/services/notifications"
+
+  # requirements
+  _safe_write "$ROOT_DIR/services/notifications/requirements.txt" <<'REQ'
+fastapi>=0.95.0
+uvicorn[standard]>=0.21.0
+python-dotenv>=1.0.0
+redis>=4.5.0
+aiohttp>=3.9.0
+pydantic>=2.0
+REQ
+
+  # Dockerfile
+  _safe_write "$ROOT_DIR/services/notifications/Dockerfile" <<'DFNOTIFY'
+FROM python:3.11-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+EXPOSE 8000
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+DFNOTIFY
+
+  # main.py
+  _safe_write "$ROOT_DIR/services/notifications/main.py" <<'PYNOTIFY'
+"""
+Notifications Service
+ - Email (SMTP)
+ - SMS (generic HTTP)
+ - WhatsApp (Meta Cloud API)
+ - Redis-based retry queue
+ - Delivery webhooks
+
+Environmental variables:
+ - SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS
+ - SMS_PROVIDER_URL         (expects POST JSON)
+ - SMS_API_KEY
+ - WHATSAPP_TOKEN
+ - WHATSAPP_PHONE_ID        (Cloud API)
+ - REDIS_URL=redis://redis:6379/0
+
+Internal Redis keys:
+ - queue:notify
+ - message:<id>
+"""
+
+import os
+import json
+import uuid
+import asyncio
+import smtplib
+from email.message import EmailMessage
+import aiohttp
+import redis.asyncio as aioredis
+
+from fastapi import FastAPI, HTTPException, Body, Request
+from pydantic import BaseModel, EmailStr
+
+# Env
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
+
+SMTP_HOST = os.getenv("SMTP_HOST")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER")
+SMTP_PASS = os.getenv("SMTP_PASS")
+
+SMS_PROVIDER_URL = os.getenv("SMS_PROVIDER_URL")
+SMS_API_KEY = os.getenv("SMS_API_KEY")
+
+WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
+WHATSAPP_PHONE_ID = os.getenv("WHATSAPP_PHONE_ID")
+
+app = FastAPI(title="Notifications Service")
+redis = aioredis.from_url(REDIS_URL, decode_responses=True)
+
+# --------------------------------------------
+# Helper models
+# --------------------------------------------
+class EmailReq(BaseModel):
+  to: EmailStr
+  subject: str
+  body: str
+  from_email: EmailStr | None = None
+
+class SMSReq(BaseModel):
+  to: str
+  message: str
+
+class WhatsAppReq(BaseModel):
+  to: str
+  message: str
+
+# --------------------------------------------
+# Helpers
+# --------------------------------------------
+async def save_status(msg_id: str, status: dict):
+  await redis.set(f"message:{msg_id}", json.dumps(status))
+
+async def queue_retry(payload: dict, delay: int):
+  """
+  Schedules retry using zset with score = execution_time (epoch seconds)
+  """
+  retry_time = int(asyncio.get_event_loop().time()) + delay
+  await redis.zadd("queue:notify", {json.dumps(payload): retry_time})
+
+# --------------------------------------------
+# Providers
+# --------------------------------------------
+async def send_email_internal(req: EmailReq, msg_id: str):
+  msg = EmailMessage()
+  msg["From"] = req.from_email or SMTP_USER
+  msg["To"] = req.to
+  msg["Subject"] = req.subject
+  msg.set_content(req.body)
+
+  try:
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+      server.starttls()
+      server.login(SMTP_USER, SMTP_PASS)
+      server.send_message(msg)
+    await save_status(msg_id, {"status": "sent"})
+  except Exception as e:
+    await save_status(msg_id, {"status": "failed", "error": str(e)})
+    raise
+
+async def send_sms_internal(req: SMSReq, msg_id: str):
+  if not SMS_PROVIDER_URL:
+    raise Exception("SMS_PROVIDER_URL not configured")
+
+  async with aiohttp.ClientSession() as session:
+    try:
+      r = await session.post(
+        SMS_PROVIDER_URL,
+        headers={"Authorization": f"Bearer {SMS_API_KEY}"},
+        json={"to": req.to, "message": req.message},
+        timeout=15,
+      )
+      if r.status != 200:
+        txt = await r.text()
+        raise Exception(f"SMS provider error: {r.status} {txt}")
+      await save_status(msg_id, {"status": "sent"})
+    except Exception as e:
+      await save_status(msg_id, {"status": "failed", "error": str(e)})
+      raise
+
+async def send_whatsapp_internal(req: WhatsAppReq, msg_id: str):
+  if not WHATSAPP_TOKEN or not WHATSAPP_PHONE_ID:
+    raise Exception("WhatsApp provider not configured")
+
+  url = f"https://graph.facebook.com/v17.0/{WHATSAPP_PHONE_ID}/messages"
+
+  payload = {
+    "messaging_product": "whatsapp",
+    "to": req.to,
+    "type": "text",
+    "text": {"body": req.message},
+  }
+
+  headers = {"Authorization": f"Bearer {WHATSAPP_TOKEN}"}
+
+  async with aiohttp.ClientSession() as session:
+    try:
+      r = await session.post(url, json=payload, headers=headers, timeout=20)
+      if r.status != 200:
+        txt = await r.text()
+        raise Exception(f"WhatsApp error: {r.status} {txt}")
+      await save_status(msg_id, {"status": "sent"})
+    except Exception as e:
+      await save_status(msg_id, {"status": "failed", "error": str(e)})
+      raise
+
+# --------------------------------------------
+# User-facing API
+# --------------------------------------------
+@app.get("/health")
+async def health():
+  try:
+    pong = await redis.ping()
+    return {"status": "healthy", "redis": pong}
+  except Exception as e:
+    return {"status": "degraded", "error": str(e)}
+
+@app.post("/send/email")
+async def send_email(req: EmailReq):
+  msg_id = str(uuid.uuid4())
+  try:
+    await send_email_internal(req, msg_id)
+    return {"id": msg_id, "status": "sent"}
+  except Exception as e:
+    await queue_retry({"type": "email", "req": req.dict(), "msg_id": msg_id}, delay=10)
+    return {"id": msg_id, "status": "queued_retry", "error": str(e)}
+
+@app.post("/send/sms")
+async def send_sms(req: SMSReq):
+  msg_id = str(uuid.uuid4())
+  try:
+    await send_sms_internal(req, msg_id)
+    return {"id": msg_id, "status": "sent"}
+  except Exception as e:
+    await queue_retry({"type": "sms", "req": req.dict(), "msg_id": msg_id}, delay=10)
+    return {"id": msg_id, "status": "queued_retry", "error": str(e)}
+
+@app.post("/send/whatsapp")
+async def send_whatsapp(req: WhatsAppReq):
+  msg_id = str(uuid.uuid4())
+  try:
+    await send_whatsapp_internal(req, msg_id)
+    return {"id": msg_id, "status": "sent"}
+  except Exception as e:
+    await queue_retry({"type": "whatsapp", "req": req.dict(), "msg_id": msg_id}, delay=10)
+    return {"id": msg_id, "status": "queued_retry", "error": str(e)}
+
+# --------------------------------------------
+# Delivery report webhooks
+# --------------------------------------------
+@app.post("/webhook/sms")
+async def sms_webhook(data: dict = Body(...)):
+  # Save whatever provider sends
+  msg_id = data.get("id")
+  await save_status(msg_id, {"provider": "sms", "webhook": data})
+  return {"ok": True}
+
+@app.post("/webhook/whatsapp")
+async def whatsapp_webhook(request: Request):
+  body = await request.json()
+  msg_id = body.get("id")
+  await save_status(msg_id, {"provider": "whatsapp", "webhook": body})
+  return {"ok": True}
+
+# --------------------------------------------
+# Background worker for retry queue
+# --------------------------------------------
+async def retry_worker():
+  """
+  Continuously check Redis ZSET queue: queue:notify
+  Pop any messages where score (time) <= now.
+  Attempt resend with exponential backoff.
+  """
+  while True:
+    try:
+      now = int(asyncio.get_event_loop().time())
+      # fetch due items
+      items = await redis.zrangebyscore("queue:notify", 0, now)
+      for item in items:
+        await redis.zrem("queue:notify", item)
+        payload = json.loads(item)
+        msg_type = payload["type"]
+        msg_id = payload["msg_id"]
+        req = payload["req"]
+
+        try:
+          if msg_type == "email":
+            await send_email_internal(EmailReq(**req), msg_id)
+          elif msg_type == "sms":
+            await send_sms_internal(SMSReq(**req), msg_id)
+          elif msg_type == "whatsapp":
+            await send_whatsapp_internal(WhatsAppReq(**req), msg_id)
+        except Exception:
+          # exponential backoff: add +20 seconds each retry
+          payload.setdefault("retries", 0)
+          payload["retries"] += 1
+          delay = 20 * payload["retries"]
+          await queue_retry(payload, delay=delay)
+    except Exception:
+      pass
+
+    await asyncio.sleep(2)
+
+@app.on_event("startup")
+async def startup_event():
+  asyncio.create_task(retry_worker())
+PYNOTIFY
+
+  # Compose override
+  if [[ -f "$ROOT_DIR/docker-compose.override.yml" ]]; then
+    if ! grep -q "notifications:" "$ROOT_DIR/docker-compose.override.yml"; then
+      cat >> "$ROOT_DIR/docker-compose.override.yml" <<'YAML'
+  notifications:
+    build:
+      context: ./services/notifications
+      dockerfile: Dockerfile
+    container_name: notifications
+    ports:
+      - "8010:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - SMS_PROVIDER_URL=${SMS_PROVIDER_URL}
+      - SMS_API_KEY=${SMS_API_KEY}
+      - WHATSAPP_TOKEN=${WHATSAPP_TOKEN}
+      - WHATSAPP_PHONE_ID=${WHATSAPP_PHONE_ID}
+    depends_on:
+      - redis
+YAML
+      echo -e "${GREEN}✓ notifications added to docker-compose.override.yml${NC}"
+    else
+      echo -e "${YELLOW}notifications already exists — skipped${NC}"
+    fi
+  else
+    echo "docker-compose.override.yml missing — cannot append notifications."
+  fi
+
+  echo -e "${GREEN}✓ Notifications Service created.${NC}"
+  echo -e "${BLUE}API:${NC}"
+  echo "  POST http://localhost:8010/send/email"
+  echo "  POST http://localhost:8010/send/sms"
+  echo "  POST http://localhost:8010/send/whatsapp"
+  echo "  GET  http://localhost:8010/health"
+}
+
+create_notifications_service
+
+echo -e "${GREEN}Block 10 installed: Full Notifications Service (Email + SMS + WhatsApp + Retry queue).${NC}"
+```
+# ==============================================================================
+# ALL-IN-ONE: AI Platform Superstack — BLOCK 11A
+# LLM Engine (CPU-only) using llama-cpp-python (LLaMA 3.2 1B / 3B)
+#
+# Paste this block after previous blocks in your `all-in-one.sh`.
+#
+# What this block provides:
+#  - services/llm-llama/ with a FastAPI app that (when llama-cpp-python is available)
+#    can run completions and chat-like prompts against a local LLaMA-format .bin model.
+#  - Endpoints:
+#      - GET  /health
+#      - POST /v1/completions     { "prompt": "...", "max_tokens": 128, "temperature": 0.2 }
+#      - POST /v1/chat/completions { "messages": [{"role":"user","content":"..."}], ... }
+#      - POST /v1/embeddings      { "input": "..." }  (only available if model & library support embeddings)
+#  - Dockerfile tuned for CPU (installs build deps required to compile llama-cpp-python)
+#  - README-like notes written to services/llm-llama/README.md
+#  - docker-compose.override.yml entry adding the service on port 8015
+#
+# IMPORTANT (read before building):
+# - You must provide a llama.cpp-compatible model file (.bin) and set the environment variable
+#     LLM_MODEL_PATH=/path/to/your/model.bin
+#   The container expects the model file to be mounted into the container (e.g. ./data/llm:/models).
+#
+# - Building llama-cpp-python from pip requires compilers & cmake; the Dockerfile below installs
+#   the minimal set of packages to compile it on Debian slim. Builds may take several minutes.
+#
+# - This block intentionally avoids any GPU/CUDA dependencies — CPU-only.
+# ==============================================================================
+
+# ensure helper exists
+if ! declare -f _safe_write >/dev/null 2>&1; then
+  echo "Error: _safe_write helper not found. Paste Block 1..10 first."
+  exit 1
+fi
+
+create_llm_llama_service() {
+  echo -e "${YELLOW}Creating LLM Engine service (llm-llama)...${NC}"
+  mkdir -p "$ROOT_DIR/services/llm-llama"
+
+  # requirements
+  _safe_write "$ROOT_DIR/services/llm-llama/requirements.txt" <<'REQ'
+fastapi>=0.95.0
+uvicorn[standard]>=0.21.0
+pydantic>=2.0
+python-dotenv>=1.0.0
+httpx>=0.24.0
+# llama-cpp-python is the preferred backend; it will be installed in Dockerfile
+llama-cpp-python>=0.1.87
+REQ
+
+  # Dockerfile — installs build tools and compiles llama-cpp-python
+  _safe_write "$ROOT_DIR/services/llm-llama/Dockerfile" <<'DFLLM'
+# LLM (llama-cpp-python) Dockerfile - CPU-only
+FROM python:3.11-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system deps required to build and run llama-cpp-python (cmake, build tools, libomp)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    git \
+    pkg-config \
+    libopenblas-dev \
+    libblas-dev \
+    liblapack-dev \
+    libgomp1 \
+    libomp-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements.txt .
+
+# Install python deps including llama-cpp-python (this will compile the native extension)
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+# create non-root user
+RUN adduser --disabled-password --gecos "" appuser && chown -R appuser /app
+USER appuser
+
+EXPOSE 8000
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+DFLLM
+
+  # README (short)
+  _safe_write "$ROOT_DIR/services/llm-llama/README.md" <<'MD'
+LLM Engine (llama-cpp-python)
+-----------------------------
+
+Usage notes:
+1. Obtain a LLaMA 3.2 (1B or 3B) or other compatible model in .bin format.
+   Place the model under your host folder (for example ./data/llm) and mount it:
+     docker-compose run --rm -v $(pwd)/data/llm:/models ...
+
+2. Set env var in your .env:
+     LLM_MODEL_PATH=/models/your-model.bin
+
+3. Build & run:
+     docker-compose build llm-llama
+     docker-compose up -d llm-llama
+
+4. Health:
+     GET http://localhost:8015/health
+
+5. Completions:
+     POST http://localhost:8015/v1/completions
+     Body: { "prompt": "Hello", "max_tokens": 128, "temperature": 0.2 }
+
+6. Chat:
+     POST http://localhost:8015/v1/chat/completions
+     Body: { "messages": [{"role":"system","content":"You are helpful."},{"role":"user","content":"Say hi"}] }
+
+Important:
+ - This service compiles native code when the image is built. If you have prebuilt wheels, use --find-links.
+ - For large models, ensure host machine has enough RAM. 3B models will require multiple GBs of RAM.
 MD
 
-# Final hints
-echo -e "\n✅ Project created under: $ROOT"
-echo -e "ℹ️  Edit $ROOT/.env for secrets and API keys, then run:"
-echo "   cd $ROOT && docker compose up --build -d"
+  # main.py: Llama wrapper server with safe fallbacks
+  _safe_write "$ROOT_DIR/services/llm-llama/main.py" <<'PYLLM'
+"""
+LLM Engine (llama-cpp-python wrapper)
+
+Endpoints:
+ - GET  /health
+ - POST /v1/completions
+ - POST /v1/chat/completions
+ - POST /v1/embeddings
+
+Behavior:
+ - Tries to import and initialize llama-cpp-python (Llama).
+ - If library or model is missing, /health reports model not loaded and model endpoints return 503.
+ - create_completion uses a simple prompt-based completion call.
+ - chat/completions converts messages -> prompt and calls the same completion path.
+ - embeddings: only supported if the Llama instance exposes 'embeddings' or 'embed' methods;
+   otherwise returns 501 Not Implemented.
+"""
+
+import os
+import time
+import logging
+from typing import Any, Dict, List, Optional
+from pathlib import Path
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
+
+# Attempt to import llama-cpp-python
+try:
+    from llama_cpp import Llama
+except Exception as e:
+    Llama = None
+    LLAMA_IMPORT_ERROR = str(e)
+else:
+    LLAMA_IMPORT_ERROR = None
+
+# config
+MODEL_PATH = os.getenv("LLM_MODEL_PATH", os.getenv("LLM_MODEL", "/models/llama.bin"))
+MODEL_N_CTX = int(os.getenv("LLM_N_CTX", "2048"))
+MODEL_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.2"))
+MODEL_TOP_P = float(os.getenv("LLM_TOP_P", "0.95"))
+
+app = FastAPI(title="LLM Engine (llama-cpp-python)")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("llm-llama")
+
+LLAMA: Optional["Llama"] = None
+MODEL_LOADED = False
+
+# Simple lock to prevent concurrent model.load/generation clashes
+import asyncio
+model_lock = asyncio.Lock()
+
+
+class CompletionRequest(BaseModel):
+    prompt: str
+    max_tokens: int = 128
+    temperature: float = MODEL_TEMPERATURE
+    top_p: float = MODEL_TOP_P
+    stop: Optional[List[str]] = None
+
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+
+class ChatRequest(BaseModel):
+    messages: List[ChatMessage]
+    max_tokens: int = 128
+    temperature: float = MODEL_TEMPERATURE
+    top_p: float = MODEL_TOP_P
+
+
+class EmbeddingRequest(BaseModel):
+    input: str
+
+
+def init_model():
+    global LLAMA, MODEL_LOADED
+    if LLAMA is not None:
+        return
+    if Llama is None:
+        logger.warning("llama-cpp-python not available: %s", LLAMA_IMPORT_ERROR)
+        MODEL_LOADED = False
+        return
+
+    model_file = Path(MODEL_PATH)
+    if not model_file.exists():
+        logger.warning("Model file not found at %s", MODEL_PATH)
+        MODEL_LOADED = False
+        return
+
+    try:
+        # instantiate Llama with sensible defaults; CPU-only
+        LLAMA = Llama(model_path=str(model_file), n_ctx=MODEL_N_CTX)
+        MODEL_LOADED = True
+        logger.info("LLM model loaded: %s", model_file)
+    except Exception as e:
+        logger.exception("Failed to load model: %s", e)
+        MODEL_LOADED = False
+
+
+@app.on_event("startup")
+def startup_event():
+    init_model()
+
+
+@app.get("/health")
+def health():
+    return {
+        "status": "healthy" if MODEL_LOADED else "model not loaded",
+        "model_path": MODEL_PATH,
+        "import_error": LLAMA_IMPORT_ERROR or ""
+    }
+
+
+def messages_to_prompt(messages: List[Dict[str, Any]]) -> str:
+    """
+    Very simple chat->prompt conversion:
+      system messages first, then user/assistant alternation.
+    This is intentionally minimal; replace with a more robust chat prompt
+    schema in production (e.g., role templates).
+    """
+    pieces = []
+    for m in messages:
+        role = m.get("role", "user")
+        content = m.get("content", "")
+        if role == "system":
+            pieces.append(f"[SYSTEM]\n{content}\n")
+        elif role == "user":
+            pieces.append(f"[USER]\n{content}\n")
+        else:
+            pieces.append(f"[ASSISTANT]\n{content}\n")
+    pieces.append("\n[ASSISTANT]\n")  # model to continue as assistant
+    return "\n".join(pieces)
+
+
+@app.post("/v1/completions")
+async def completions(req: CompletionRequest):
+    if not MODEL_LOADED or LLAMA is None:
+        raise HTTPException(status_code=503, detail="Model not loaded or unavailable")
+
+    # run generation under lock to avoid concurrent resource contention
+    async with model_lock:
+        try:
+            # llama-cpp-python exposes call signatures like llm.create_completion or calling the instance.
+            # We attempt to call .create_completion first; if missing, call the instance as a function.
+            kwargs = dict(prompt=req.prompt, max_tokens=req.max_tokens, temperature=req.temperature, top_p=req.top_p)
+            if hasattr(LLAMA, "create_completion"):
+                resp = LLAMA.create_completion(**kwargs)
+                # typical response: {'id':..., 'choices':[{'text':...}], ...}
+                text = ""
+                try:
+                    text = resp.get("choices", [{}])[0].get("text", "")
+                except Exception:
+                    text = str(resp)
+            else:
+                # fallback: call LLAMA(...) — some versions support __call__
+                out = LLAMA(req.prompt, max_tokens=req.max_tokens, temperature=req.temperature, top_p=req.top_p)
+                # out may be a dict or simple string-like object
+                if isinstance(out, dict):
+                    text = out.get("choices", [{}])[0].get("text", "")
+                else:
+                    text = str(out)
+            return {"id": f"llm-{int(time.time())}", "object": "text_completion", "choices": [{"text": text}]}
+        except Exception as e:
+            logger.exception("Generation error")
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/v1/chat/completions")
+async def chat_completions(req: ChatRequest):
+    if not MODEL_LOADED or LLAMA is None:
+        raise HTTPException(status_code=503, detail="Model not loaded or unavailable")
+
+    prompt = messages_to_prompt([m.dict() for m in req.messages])
+    # reuse completions path
+    comp = CompletionRequest(prompt=prompt, max_tokens=req.max_tokens, temperature=req.temperature, top_p=req.top_p)
+    return await completions(comp)
+
+
+@app.post("/v1/embeddings")
+async def embeddings(req: EmbeddingRequest):
+    """
+    Embeddings support depends on the installed llama-cpp-python version and model.
+    If LLAMA exposes an embeddings API, attempt to call it; otherwise return 501.
+    """
+    if not MODEL_LOADED or LLAMA is None:
+        raise HTTPException(status_code=503, detail="Model not loaded or unavailable")
+
+    # Attempt to detect an embedding method
+    if hasattr(LLAMA, "embeddings") and callable(getattr(LLAMA, "embeddings")):
+        async with model_lock:
+            try:
+                resp = LLAMA.embeddings([req.input])
+                # expected format: {'data': [{'embedding':[...]}], ...}
+                vec = resp.get("data", [{}])[0].get("embedding", None)
+                if vec is None:
+                    raise RuntimeError("embeddings returned unexpected format")
+                return {"object": "embedding", "data": [{"embedding": vec}]}
+            except Exception as e:
+                logger.exception("Embedding error")
+                raise HTTPException(status_code=500, detail=str(e))
+    # Another possible method name
+    if hasattr(LLAMA, "embed") and callable(getattr(LLAMA, "embed")):
+        async with model_lock:
+            try:
+                vec = LLAMA.embed(req.input)
+                return {"object": "embedding", "data": [{"embedding": vec}]}
+            except Exception as e:
+                logger.exception("Embedding error")
+                raise HTTPException(status_code=500, detail=str(e))
+
+    raise HTTPException(status_code=501, detail="Embedding not supported by this runtime or model")
+PYLLM
+
+  # docker-compose.override.yml entry (append or create)
+  if [ -f "$ROOT_DIR/docker-compose.override.yml" ]; then
+    if ! grep -q "llm-llama" "$ROOT_DIR/docker-compose.override.yml"; then
+      cat >> "$ROOT_DIR/docker-compose.override.yml" <<'YAML'
+  llm-llama:
+    build:
+      context: ./services/llm-llama
+      dockerfile: Dockerfile
+    container_name: llm-llama
+    ports:
+      - "8015:8000"
+    environment:
+      - LLM_MODEL_PATH=${LLM_MODEL_PATH:-/models/llama.bin}
+      - LLM_N_CTX=${LLM_N_CTX:-2048}
+    volumes:
+      - ./data/llm:/models
+YAML
+      echo -e "${GREEN}✓ llm-llama appended to docker-compose.override.yml${NC}"
+    else
+      echo -e "${YELLOW}llm-llama already present in docker-compose.override.yml — skipped${NC}"
+    fi
+  else
+    _safe_write "$ROOT_DIR/docker-compose.override.yml" <<'YAMLNEW'
+version: '3.9'
+services:
+  llm-llama:
+    build:
+      context: ./services/llm-llama
+      dockerfile: Dockerfile
+    container_name: llm-llama
+    ports:
+      - "8015:8000"
+    environment:
+      - LLM_MODEL_PATH=${LLM_MODEL_PATH:-/models/llama.bin}
+      - LLM_N_CTX=${LLM_N_CTX:-2048}
+    volumes:
+      - ./data/llm:/models
+YAMLNEW
+    echo -e "${GREEN}✓ docker-compose.override.yml created and llm-llama added${NC}"
+  fi
+
+  # Create a small helper example for running locally
+  _safe_write "$ROOT_DIR/services/llm-llama/run_local_example.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+# Example: run server locally (requires llama-cpp-python installed and MODEL_PATH set)
+export LLM_MODEL_PATH=${LLM_MODEL_PATH:-./data/llm/your-model.bin}
+python main.py
+SH
+  chmod +x "$ROOT_DIR/services/llm-llama/run_local_example.sh"
+
+  echo -e "${GREEN}✓ LLM (llm-llama) service created under services/llm-llama${NC}"
+  echo -e "${BLUE}IMPORTANT:${NC} Place your model under ./data/llm and set LLM_MODEL_PATH in .env to /models/your-model.bin"
+  echo -e "${BLUE}Build & Run (docker-compose):${NC}"
+  echo "  docker-compose build llm-llama"
+  echo "  docker-compose up -d llm-llama"
+  echo -e "${BLUE}Health: http://localhost:8015/health"
+  echo -e "${BLUE}Completions: POST http://localhost:8015/v1/completions"
+  echo -e "${BLUE}Chat: POST http://localhost:8015/v1/chat/completions"
+  echo -e "${BLUE}Embeddings: POST http://localhost:8015/v1/embeddings (only if supported)"
 }
 
-# Main function
-main() {
-    create_directories
-    create_env_files
-    create_docker_compose
-    create_service_files
-    
-    echo -e "\n${GREEN}✓ All services and configurations have been created successfully!${NC}"
-    echo -e "\nTo start the services, run:"
-    echo -e "   cd $ROOT_DIR && docker compose up --build -d"
-    echo -e "\nThen access the application at http://localhost"
+create_llm_llama_service
+
+echo -e "${GREEN}Block 11A installed: LLM Engine (llm-llama) skeleton with llama-cpp-python support.${NC}"
+echo -e "${YELLOW}If you want, next block can add: model downloader scripts, automatic quantization hints, or Qdrant integration for embeddings indexing.${NC}"
+```bash
+# ==============================================================================
+# ALL-IN-ONE: AI Platform Superstack — BLOCK 12
+# Adds:
+#  - Qdrant vector database wiring (docker-compose.override.yml)
+#  - Embeddings Indexer service (services/embeddings-indexer)
+#      - POST /index   { "id": "...", "texts": ["..."], "metadatas": [{},...] }
+#      - POST /search  { "query": "...", "top_k": 5 }
+#      - Calls LLM service's /v1/embeddings endpoint (llm-llama) to get vectors
+#      - Stores and searches vectors in Qdrant via its HTTP API
+#  - Helper script: scripts/model_downloader.sh (instructions + safe download stub)
+#  - Notes and quantization hints written to services/llm-llama/QUANTIZE.md
+#
+# Design assumptions / safety:
+#  - Embeddings endpoint must be available at llm-llama:8000/v1/embeddings.
+#    If your LLaMA runtime doesn't support embeddings, the indexer will return 501.
+#  - Qdrant runs locally inside Docker (no external cloud required).
+#  - All services remain CPU-only.
+#
+# Paste this block right after previous blocks.
+# ==============================================================================
+
+# Ensure helper exists
+if ! declare -f _safe_write >/dev/null 2>&1; then
+  echo "Error: _safe_write helper not found. Paste Blocks 1..11A first."
+  exit 1
+fi
+
+# --------------------------
+# 1) Qdrant compose wiring
+# --------------------------
+echo -e "${YELLOW}Adding Qdrant to docker-compose.override.yml...${NC}"
+if [ -f "$ROOT_DIR/docker-compose.override.yml" ]; then
+  if ! grep -q "qdrant" "$ROOT_DIR/docker-compose.override.yml"; then
+    cat >> "$ROOT_DIR/docker-compose.override.yml" <<'YAML'
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - ./data/qdrant:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: 6334
+      QDRANT__STORAGE__PATH: /qdrant/storage
+YAML
+    echo -e "${GREEN}✓ Qdrant appended to docker-compose.override.yml${NC}"
+  else
+    echo -e "${YELLOW}qdrant already present in docker-compose.override.yml — skipped${NC}"
+  fi
+else
+  _safe_write "$ROOT_DIR/docker-compose.override.yml" <<'YAMLNEW'
+version: '3.9'
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - ./data/qdrant:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__GRPC_PORT: 6334
+      QDRANT__STORAGE__PATH: /qdrant/storage
+YAMLNEW
+  echo -e "${GREEN}✓ docker-compose.override.yml created with qdrant${NC}"
+fi
+
+# --------------------------
+# 2) Embeddings Indexer service
+# --------------------------
+echo -e "${YELLOW}Creating Embeddings Indexer service...${NC}"
+mkdir -p "$ROOT_DIR/services/embeddings-indexer"
+
+_safe_write "$ROOT_DIR/services/embeddings-indexer/requirements.txt" <<'REQ'
+fastapi>=0.95.0
+uvicorn[standard]>=0.21.0
+httpx>=0.24.0
+pydantic>=2.0
+python-dotenv>=1.0.0
+REQ
+
+_safe_write "$ROOT_DIR/services/embeddings-indexer/Dockerfile" <<'DFINDEX'
+FROM python:3.11-slim
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends libpq-dev build-essential && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
+COPY . .
+EXPOSE 8000
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+DFINDEX
+
+# main.py for indexer
+_safe_write "$ROOT_DIR/services/embeddings-indexer/main.py" <<'PYINDEX'
+"""
+Embeddings Indexer (Qdrant + llm-llama)
+ - POST /index : index a list of texts (expects llm-llama embeddings)
+ - POST /search: search by text query (calls embeddings then qdrant search)
+ - GET  /health: checks Qdrant and llm-llama health
+Environment:
+ - QDRANT_URL (default http://qdrant:6333)
+ - LLM_EMBED_URL (default http://llm-llama:8000/v1/embeddings)
+Note: If llm-llama does not implement embeddings, this service returns 501.
+"""
+import os
+import logging
+import httpx
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from typing import List, Optional, Dict, Any
+
+QDRANT_URL = os.getenv("QDRANT_URL", "http://qdrant:6333")
+LLM_EMBED_URL = os.getenv("LLM_EMBED_URL", "http://llm-llama:8000/v1/embeddings")
+COLLECTION = os.getenv("QDRANT_COLLECTION", "documents")
+
+app = FastAPI(title="Embeddings Indexer")
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("emb-indexer")
+
+class IndexReq(BaseModel):
+    id: str
+    texts: List[str]
+    metadatas: Optional[List[Dict[str, Any]]] = None
+
+class SearchReq(BaseModel):
+    query: str
+    top_k: int = 5
+
+async def qdrant_create_collection_if_missing():
+    # minimal collection creation with vector size unknown until we have an embedding
+    async with httpx.AsyncClient() as client:
+        info = await client.get(f"{QDRANT_URL}/collections")
+        if info.status_code != 200:
+            # Qdrant not ready
+            raise RuntimeError("Qdrant not responding")
+        collections = info.json().get("collections", [])
+        if any(c["name"] == COLLECTION for c in collections):
+            return True
+    return False
+
+async def get_embeddings(texts: List[str]):
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(LLM_EMBED_URL, json={"input": texts})
+        if resp.status_code == 200:
+            data = resp.json()
+            # shape may vary; support single and batched formats
+            # expected: {"object":"embedding","data":[{"embedding":[...]}]} or list
+            if isinstance(data, dict) and data.get("data"):
+                return [d.get("embedding") for d in data["data"]]
+            if isinstance(data, list):
+                return data
+            # fallback if LLM returned {'embedding': [...]}
+            if "embedding" in data:
+                return [data["embedding"]]
+        elif resp.status_code == 501:
+            raise HTTPException(status_code=501, detail="Embeddings not supported by LLM runtime")
+        else:
+            raise HTTPException(status_code=502, detail=f"Embedding provider error: {resp.status_code}: {resp.text}")
+    raise HTTPException(status_code=500, detail="Unknown embedding error")
+
+async def qdrant_upsert(points: List[dict]):
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        url = f"{QDRANT_URL}/collections/{COLLECTION}/points"
+        resp = await client.put(url, json={"points": points})
+        if resp.status_code not in (200, 201):
+            raise HTTPException(status_code=502, detail=f"Qdrant upsert failed: {resp.status_code}: {resp.text}")
+        return resp.json()
+
+async def qdrant_search(vector, top_k=5):
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        url = f"{QDRANT_URL}/collections/{COLLECTION}/points/search"
+        payload = {"vector": vector, "top": top_k}
+        resp = await client.post(url, json=payload)
+        if resp.status_code != 200:
+            raise HTTPException(status_code=502, detail=f"Qdrant search failed: {resp.status_code}: {resp.text}")
+        return resp.json()
+
+@app.get("/health")
+async def health():
+    # check Qdrant and LLM embed endpoint
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        try:
+            q = await client.get(f"{QDRANT_URL}/collections")
+            llm = await client.get(LLM_EMBED_URL.replace("/v1/embeddings","/health"))
+            return {"qdrant": q.status_code==200, "llm_embeddings": llm.status_code==200}
+        except Exception as e:
+            return {"error": str(e)}
+
+@app.post("/index")
+async def index(req: IndexReq):
+    # get embeddings for each text
+    embeddings = await get_embeddings(req.texts)
+    # create collection if missing (naive: create with known vector size)
+    if not await qdrant_create_collection_if_missing():
+        # create collection based on vector size
+        dim = len(embeddings[0])
+        async with httpx.AsyncClient() as client:
+            create_payload = {
+                "vectors": {"size": dim, "distance": "Cosine"},
+                "shards": 1
+            }
+            r = await client.put(f"{QDRANT_URL}/collections/{COLLECTION}", json=create_payload)
+            if r.status_code not in (200, 201):
+                raise HTTPException(status_code=502, detail=f"Failed to create collection: {r.text}")
+
+    # prepare points for upsert
+    points = []
+    for i, emb in enumerate(embeddings):
+        point_id = f"{req.id}_{i}"
+        payload = {"text": req.texts[i], "metadata": (req.metadatas[i] if req.metadatas and i < len(req.metadatas) else {})}
+        points.append({"id": point_id, "vector": emb, "payload": payload})
+
+    res = await qdrant_upsert(points)
+    return {"status": "ok", "upsert": res}
+
+@app.post("/search")
+async def search(req: SearchReq):
+    # get embedding for query
+    vectors = await get_embeddings([req.query])
+    vec = vectors[0]
+    res = await qdrant_search(vec, top_k=req.top_k)
+    return res
+PYINDEX
+
+# Compose override entry for embeddings-indexer
+if [ -f "$ROOT_DIR/docker-compose.override.yml" ]; then
+  if ! grep -q "embeddings-indexer" "$ROOT_DIR/docker-compose.override.yml"; then
+    cat >> "$ROOT_DIR/docker-compose.override.yml" <<'YAML'
+
+  embeddings-indexer:
+    build:
+      context: ./services/embeddings-indexer
+      dockerfile: Dockerfile
+    container_name: embeddings-indexer
+    ports:
+      - "8016:8000"
+    environment:
+      - QDRANT_URL=http://qdrant:6333
+      - LLM_EMBED_URL=http://llm-llama:8000/v1/embeddings
+      - QDRANT_COLLECTION=documents
+    depends_on:
+      - llm-llama
+      - qdrant
+YAML
+    echo -e "${GREEN}✓ embeddings-indexer appended to docker-compose.override.yml${NC}"
+  else
+    echo -e "${YELLOW}embeddings-indexer already present in docker-compose.override.yml — skipped${NC}"
+  fi
+fi
+
+# --------------------------
+# 3) Helper: model downloader + quantize hints
+# --------------------------
+mkdir -p "$ROOT_DIR/scripts"
+_safe_write "$ROOT_DIR/scripts/model_downloader.sh" <<'SHDOC'
+#!/usr/bin/env bash
+set -euo pipefail
+# Model downloader stub + quantization hints
+# Usage:
+#   ./scripts/model_downloader.sh --source <url-or-path> --dest ./data/llm/your-model.bin
+#
+# This script is a safe helper: it does not download large files automatically
+# unless you supply a direct URL. It verifies SHA256 if provided.
+#
+usage(){
+  cat <<EOF
+Usage: $0 --source <url|path> --dest <dest-path> [--sha256 <hash>]
+
+Example:
+  ./scripts/model_downloader.sh --source "https://example.com/llama-3-1b.bin" --dest ./data/llm/llama-3-1b.bin
+EOF
+  exit 1
 }
 
-# Run the main function
-main "$@"
+SRC=""
+DEST=""
+SHA=""
 
-exit 0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --source) SRC="$2"; shift 2;;
+    --dest) DEST="$2"; shift 2;;
+    --sha256) SHA="$2"; shift 2;;
+    *) echo "Unknown $1"; usage;;
+  esac
+done
+
+if [[ -z "$SRC" || -z "$DEST" ]]; then usage; fi
+
+mkdir -p "$(dirname "$DEST")"
+
+if [[ "$SRC" == http* ]]; then
+  echo "Downloading model from $SRC → $DEST (streaming)"
+  # use curl streaming
+  curl -L --progress-bar "$SRC" -o "$DEST"
+else
+  echo "Copying local file $SRC → $DEST"
+  cp "$SRC" "$DEST"
+fi
+
+if [[ -n "$SHA" ]]; then
+  echo "Verifying SHA256..."
+  calc=$(sha256sum "$DEST" | awk '{print $1}')
+  if [[ "$calc" != "$SHA" ]]; then
+    echo "SHA mismatch: $calc != $SHA" >&2
+    exit 2
+  fi
+  echo "SHA verified"
+fi
+
+echo "Model saved to $DEST"
+echo ""
+echo "Quantization hints:"
+echo " - For llama-cpp, consider converting to GGML Q4_K_M or similar using llama.cpp tools."
+echo " - Example: python /path/to/convert script from llama.cpp repo or use quantize tool."
+echo " - For 3B models expect multi-GB RAM usage; prefer 1B for low-RAM CPU inference."
+SHDOC
+chmod +x "$ROOT_DIR/scripts/model_downloader.sh"
+
+# --------------------------
+# 4) Quantization notes in LLM folder
+# --------------------------
+_safe_write "$ROOT_DIR/services/llm-llama/QUANTIZE.md" <<'QH'
+Quantization & Model Hints (LLM-LLAMA)
+-------------------------------------
+
+Suggestions for CPU-friendly deployment:
+
+1) Prefer smaller models for low-RAM:
+   - LLaMA 3.2 1B is a good starting point for CPU-only inference.
+   - 3B works but requires significantly more RAM.
+
+2) Use GGML / quantized formats:
+   - The llama.cpp tooling provides quantization tools that convert a .bin model
+     to smaller GGML files (q4/ q5 formats). These are faster and use less RAM.
+   - Typical tools: `convert.py` or `quantize` from the llama.cpp repo.
+
+3) Example quantize flow (host side):
+   - Clone llama.cpp and build the quantize utility.
+   - Use: `./quantize model.bin model-q4.bin q4_k_m` (options vary by tool)
+   - Mount `model-q4.bin` into Docker at /models/llama-q4.bin and set LLM_MODEL_PATH accordingly.
+
+4) Memory & threads:
+   - Tune `n_threads` (llama-cpp option) based on host CPU cores.
+   - Use small `n_ctx` if you don't need long context windows.
+
+5) Testing locally:
+   - Use the `scripts/model_downloader.sh` to fetch or place a model into ./data/llm
+   - Update .env: LLM_MODEL_PATH=/models/your-quantized-model.bin
+   - Build container and startup.
+
+6) If embeddings are unsupported:
+   - Use a small CPU-friendly sentence-transformers model locally on a separate embeddings service.
+   - Or use llm-llama's embed() if supported in your build.
+
+QH
+
+echo -e "${GREEN}Block 12 installed: Qdrant + Embeddings Indexer + model_downloader helper + quantize notes.${NC}"
+echo -e "${BLUE}Next steps:${NC}"
+echo "  docker-compose up -d qdrant"
+echo "  docker-compose build embeddings-indexer"
+echo "  docker-compose up -d embeddings-indexer"
+echo -e "${BLUE}Health checks:"
+echo "  Qdrant: http://localhost:6333 (API root)"
+echo "  Indexer: http://localhost:8016/health"
+```

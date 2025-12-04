@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  realtime-transcriber:
+    build:
+      context: ./realtime-transcriber
+      dockerfile: Dockerfile
+    container_name: realtime-transcriber
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_TELEMETRY_DISABLED=1
+    restart: unless-stopped
+    networks:
+      - frontend-network
+    volumes:
+      - ./realtime-transcriber:/app
+      - /app/node_modules
+      - /app/.next
+
+  voice-agent:
+    build:
+      context: ./voice-agent
+      dockerfile: Dockerfile
+    container_name: voice-agent
+    ports:
+      - "3001:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_TELEMETRY_DISABLED=1
+    restart: unless-stopped
+    networks:
+      - frontend-network
+    volumes:
+      - ./voice-agent:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - realtime-transcriber
+
+networks:
+  frontend-network:
+    driver: bridge

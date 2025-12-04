@@ -9,19 +9,8 @@ NC='\033[0m' # No Color
 
 # Get the root directory of the project
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# ============================================
-# IMPORTANT: This script now builds both Next.js frontend apps:
-# 1. Realtime Transcriber (frontend/realtime-transcriber)
-# 2. Voice Agent (frontend/voice-agent)
-# 
-# These will be served on:
-# - Realtime Transcriber: http://localhost:3001
-# - Voice Agent: http://localhost:3002
-# 
-# Use with Docker Compose:
-#   docker compose -f docker-compose.yml -f docker-compose.frontend.yml up -d
-# ============================================
+FRONTEND_DIR="$ROOT_DIR/services/pwa"
+DIST_DIR="$FRONTEND_DIR/dist"
 
 # Function to check if a command exists
 command_exists() {

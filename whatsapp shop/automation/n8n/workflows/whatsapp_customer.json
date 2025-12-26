@@ -1,0 +1,174 @@
+{
+  "name": "WhatsApp Customer Workflow",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "event": "={\n  \"event\": \"message.upsert\",\n  \"conditions\": {\n    \"fromMe\": false\n  }\n}"
+      },
+      "name": "WhatsApp Trigger",
+      "type": "n8n-nodes-whatsapp.whatsAppTrigger",
+      "typeVersion": 1,
+      "position": [
+        450,
+        300
+      ],
+      "credentials": {
+        "whatsAppApi": "whatsapp-credentials"
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $node[\"WhatsApp Trigger\"].json.body.eventData.message.conversation}}",
+              "operation": "contains",
+              "value2": "order"
+            }
+          ]
+        }
+      },
+      "name": "Is Order Related?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "text": "=Thank you for your message! I'll help you with your order. Please wait a moment..."
+      },
+      "name": "Send Initial Response",
+      "type": "n8n-nodes-whatsapp.sendMessage",
+      "typeVersion": 1,
+      "position": [
+        950,
+        200
+      ],
+      "credentials": {
+        "whatsAppApi": "whatsapp-credentials"
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Process the order here\nconst orderDetails = $input.item.json.body;\n\n// Add your order processing logic here\nreturn {\n  json: {\n    status: 'success',\n    message: 'Order processed successfully',\n    originalData: orderDetails\n  }\n};"
+      },
+      "name": "Process Order",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "text": "=Your order has been received! Order ID: {{ $node[\"Process Order\"].json.orderId || '12345' }}"
+      },
+      "name": "Send Order Confirmation",
+      "type": "n8n-nodes-whatsapp.sendMessage",
+      "typeVersion": 1,
+      "position": [
+        1500,
+        300
+      ],
+      "credentials": {
+        "whatsAppApi": "whatsapp-credentials"
+      }
+    },
+    {
+      "parameters": {
+        "text": "I'm sorry, I didn't understand that. Please type 'order' if you need help with an order."
+      },
+      "name": "Send Default Response",
+      "type": "n8n-nodes-whatsapp.sendMessage",
+      "typeVersion": 1,
+      "position": [
+        950,
+        400
+      ],
+      "credentials": {
+        "whatsAppApi": "whatsapp-credentials"
+      }
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp Trigger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp Trigger": {
+      "main": [
+        [
+          {
+            "node": "Is Order Related?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Order Related?": {
+      "main": [
+        [
+          {
+            "node": "Send Initial Response",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Process Order",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Default Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Order": {
+      "main": [
+        [
+          {
+            "node": "Send Order Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1.0.0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": ""
+  }
+}

@@ -1,0 +1,136 @@
+{
+  "name": "Service Booking Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "event": "service.booking.request"
+      },
+      "name": "Service Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "checkAvailability",
+        "parameters": "=serviceId={{ $node[\"Service Webhook\"].json.serviceId }}&date={{ $node[\"Service Webhook\"].json.requestedDate }}",
+        "options": {}
+      },
+      "name": "Check Availability",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "credentials": {
+        "httpBasicAuth": "api-credentials"
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $node[\"Check Availability\"].json.available }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "Is Available?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "operation": "createBooking",
+        "bodyParametersJson": "{\"customerId\":\"{{ $node[\\\"Service Webhook\\\"].json.customerId }}\",\"serviceId\":\"{{ $node[\\\"Service Webhook\\\"].json.serviceId }}\",\"dateTime\":\"{{ $node[\\\"Service Webhook\\\"].json.requestedDate }}\",\"notes\":\"{{ $node[\\\"Service Webhook\\\"].json.notes || '' }}\"}",
+        "options": {}
+      },
+      "name": "Create Booking",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [950, 200],
+      "credentials": {
+        "httpBasicAuth": "api-credentials"
+      }
+    },
+    {
+      "parameters": {
+        "to": "={{ $node[\"Service Webhook\"].json.customerPhone }}",
+        "text": "=✅ Booking Confirmed!\n\nService: {{ $node[\"Check Availability\"].json.serviceName }}\nDate: {{ $node[\"Create Booking\"].json.bookingDate }}\nTime: {{ $node[\"Create Booking\"].json.bookingTime }}\n\nWe look forward to seeing you!"
+      },
+      "name": "Send Confirmation",
+      "type": "n8n-nodes-whatsapp.sendMessage",
+      "typeVersion": 1,
+      "position": [1200, 200],
+      "credentials": {
+        "whatsAppApi": "whatsapp-credentials"
+      }
+    },
+    {
+      "parameters": {
+        "to": "={{ $node[\"Service Webhook\"].json.customerPhone }}",
+        "text": "=⏳ Time Slot Unavailable\n\nWe're sorry, but the requested time is not available.\n\nAvailable times:\n{{ $node[\"Check Availability\"].json.availableSlots ? $node[\"Check Availability\"].json.availableSlots.join('\\n') : 'Please contact us for availability.' }}"
+      },
+      "name": "Send Unavailable Message",
+      "type": "n8n-nodes-whatsapp.sendMessage",
+      "typeVersion": 1,
+      "position": [1200, 400],
+      "credentials": {
+        "whatsAppApi": "whatsapp-credentials"
+      }
+    }
+  ],
+  "connections": {
+    "Service Webhook": {
+      "main": [
+        [
+          {
+            "node": "Check Availability",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Availability": {
+      "main": [
+        [
+          {
+            "node": "Is Available?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Available?": {
+      "main": [
+        [
+          {
+            "node": "Create Booking",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Unavailable Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1.0.0"
+}

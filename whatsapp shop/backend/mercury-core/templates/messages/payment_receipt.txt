@@ -1,0 +1,23 @@
+💰 *Payment Receipt* 💰
+
+Hello {{ customer_name }},
+
+We've received your payment for Order #{{ order_id }}.
+
+*Payment Details:*
+- Amount: {{ amount | format_currency }}
+- Payment Method: {{ payment_method }}
+- Transaction ID: {{ transaction_id }}
+- Date: {{ payment_date }}
+
+*Order Summary:*
+{% for item in items %}
+- {{ item.quantity }}x {{ item.name }} - {{ item.price | format_currency }}
+{% endfor %}
+
+*Total Paid:* {{ total | format_currency }}
+
+View your order status here:
+{{ order_status_url }}
+
+Thank you for your payment! Your order is being processed. If you have any questions, reply to this message.

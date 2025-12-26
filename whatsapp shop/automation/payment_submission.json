@@ -1,0 +1,162 @@
+{
+  "name": "Payment Submission Tool",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "tool-submit-payment",
+        "options": {}
+      },
+      "id": "tool-webhook",
+      "name": "Tool Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse payment submission\nlet paymentData;\ntry {\n  paymentData = typeof $json.input === 'string' \n    ? JSON.parse($json.input) \n    : $json.input;\n} catch (e) {\n  paymentData = $json;\n}\n\nreturn {\n  orderNumber: paymentData.order_number || paymentData.orderNumber,\n  paymentReference: paymentData.payment_reference || paymentData.paymentReference,\n  customerId: paymentData.customer_id || $json.customerId\n};"
+      },
+      "id": "parse-payment",
+      "name": "Parse Payment Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT o.*, c.whatsapp_number, c.name as customer_name\nFROM orders o\nJOIN customers c ON o.customer_id = c.id\nWHERE o.order_number = '{{ $json.orderNumber }}'\n  AND o.customer_id = {{ $json.customerId }};",
+        "options": {}
+      },
+      "id": "get-order",
+      "name": "Get Order",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [650, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.status }}",
+              "operation": "notEquals",
+              "value2": "expired"
+            }
+          ]
+        }
+      },
+      "id": "check-not-expired",
+      "name": "Check Not Expired",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE orders\nSET status = 'payment_submitted',\n    payment_reference = '{{ $('Parse Payment Data').item.json.paymentReference }}',\n    updated_at = NOW()\nWHERE order_number = '{{ $json.order_number }}'\nRETURNING *;",
+        "options": {}
+      },
+      "id": "update-order",
+      "name": "Update Order Status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare notification for shop owner\nconst order = $json;\n\nconst notification = `\n🔔 NEW PAYMENT NOTIFICATION\n━━━━━━━━━━━━━━━━━━━━\n\nOrder #: ${order.order_number}\nCustomer: ${order.customer_name || 'Unknown'}\nPhone: ${order.whatsapp_number}\n\nTotal Amount: $${order.total_amount}\nPayment Reference: ${order.payment_reference}\n\n━━━━━━━━━━━━━━━━━━━━\nProducts:\n${order.products.map(p => `• ${p.name} (x${p.quantity}) - $${p.subtotal}`).join('\\n')}\n━━━━━━━━━━━━━━━━━━━━\n\n⚠️ Please verify this payment and confirm.\n\nTo confirm: Reply \"CONFIRM ${order.order_number}\"\nTo reject: Reply \"REJECT ${order.order_number} [reason]\"\n`;\n\nreturn {\n  ...order,\n  ownerNotification: notification\n};"
+      },
+      "id": "prepare-notification",
+      "name": "Prepare Owner Notification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://evolution-api:8080/message/sendText",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"number\": \"SHOP_OWNER_NUMBER\",\n  \"text\": \"{{ $json.ownerNotification }}\"\n}",
+        "options": {}
+      },
+      "id": "notify-owner",
+      "name": "Notify Shop Owner",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://evolution-api:8080/message/sendText",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"number\": \"{{ $json.whatsapp_number }}\",\n  \"text\": \"✅ Payment reference received!\\n\\nOrder #: {{ $json.order_number }}\\nReference: {{ $json.payment_reference }}\\n\\nWe're verifying your payment. You'll receive confirmation within a few hours.\\n\\nThank you for your purchase! 🙏\"\n}",
+        "options": {}
+      },
+      "id": "confirm-customer",
+      "name": "Confirm to Customer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1650, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"message\": \"Payment reference submitted. Shop owner has been notified for verification.\",\n  \"order_number\": \"{{ $json.order_number }}\",\n  \"status\": \"payment_submitted\"\n}",
+        "options": {}
+      },
+      "id": "respond-success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1850, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": false,\n  \"message\": \"This order has expired or is no longer valid. Please create a new order.\",\n  \"order_number\": \"{{ $json.order_number }}\"\n}",
+        "options": {}
+      },
+      "id": "respond-expired",
+      "name": "Respond Expired",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1050, 500]
+    }
+  ],
+  "connections": {
+    "Tool Webhook": {
+      "main": [[{ "node": "Parse Payment Data", "type": "main", "index": 0 }]]
+    },
+    "Parse Payment Data": {
+      "main": [[{ "node": "Get Order", "type": "main", "index": 0 }]]
+    },
+    "Get Order": {
+      "main": [[{ "node": "Check Not Expired", "type": "main", "index": 0 }]]
+    },
+    "Check Not Expired": {
+      "main": [
+        [{ "node": "Update Order Status", "type": "main", "index": 0 }],
+        [{ "node": "Respond Expired", "type": "main", "index": 0 }]
+      ]
+    },
+    "Update Order Status": {
+      "main": [[{ "node": "Prepare Owner Notification", "type": "main", "index": 0 }]]
+    },
+    "Prepare Owner Notification": {
+      "main": [[{ "node": "Notify Shop Owner", "type": "main", "index": 0 }]]
+    },
+    "Notify Shop Owner": {
+      "main": [[{ "node": "Confirm to Customer", "type": "main", "index": 0 }]]
+    },
+    "Confirm to Customer": {
+      "main": [[{ "node": "Respond Success", "type": "main", "index": 0 }]]
+    }
+  }
+}

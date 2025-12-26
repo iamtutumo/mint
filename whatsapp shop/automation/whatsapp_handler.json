@@ -1,0 +1,249 @@
+{
+  "name": "WhatsApp Message Handler",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-webhook",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Evolution API Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.body.event }}",
+              "operation": "equals",
+              "value2": "messages.upsert"
+            }
+          ]
+        }
+      },
+      "id": "filter-messages",
+      "name": "Filter Valid Messages",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract message data from Evolution API\nconst messageData = $input.item.json.body.data;\nconst message = messageData.message;\n\nlet messageText = '';\nlet messageType = 'text';\nlet mediaUrl = '';\n\n// Handle different message types\nif (message.conversation) {\n  messageText = message.conversation;\n  messageType = 'text';\n} else if (message.extendedTextMessage) {\n  messageText = message.extendedTextMessage.text;\n  messageType = 'text';\n} else if (message.imageMessage) {\n  messageText = message.imageMessage.caption || '';\n  messageType = 'image';\n  mediaUrl = message.imageMessage.url;\n} else if (message.audioMessage) {\n  messageType = 'audio';\n  mediaUrl = message.audioMessage.url;\n} else if (message.videoMessage) {\n  messageText = message.videoMessage.caption || '';\n  messageType = 'video';\n  mediaUrl = message.videoMessage.url;\n}\n\nreturn {\n  whatsappNumber: messageData.key.remoteJid.replace('@s.whatsapp.net', ''),\n  messageText: messageText,\n  messageType: messageType,\n  mediaUrl: mediaUrl,\n  messageId: messageData.key.id,\n  timestamp: messageData.messageTimestamp,\n  fromMe: messageData.key.fromMe,\n  rawMessage: messageData\n};"
+      },
+      "id": "parse-message",
+      "name": "Parse Message Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.fromMe }}",
+              "value2": false
+            }
+          ]
+        }
+      },
+      "id": "filter-incoming",
+      "name": "Filter Incoming Only",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO customers (whatsapp_number, last_interaction)\nVALUES ('{{ $json.whatsappNumber }}', NOW())\nON CONFLICT (whatsapp_number) \nDO UPDATE SET last_interaction = NOW()\nRETURNING *;",
+        "options": {}
+      },
+      "id": "upsert-customer",
+      "name": "Upsert Customer",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM conversation_context \nWHERE customer_id = {{ $json.id }} \nORDER BY created_at DESC \nLIMIT 1;",
+        "options": {}
+      },
+      "id": "get-context",
+      "name": "Get Conversation Context",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.messageType }}",
+              "operation": "equals",
+              "value2": "audio"
+            }
+          ]
+        }
+      },
+      "id": "check-audio",
+      "name": "Is Audio Message?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1450, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://your-whisper-api:9000/transcribe",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "audio_url",
+              "value": "={{ $json.mediaUrl }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "transcribe-audio",
+      "name": "Transcribe Audio (Whisper)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1650, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge transcription with message data\nconst messageData = $input.first().json;\nconst transcription = $input.last().json;\n\nreturn {\n  ...messageData,\n  messageText: transcription.text || messageData.messageText,\n  originalMessageType: messageData.messageType,\n  wasTranscribed: true\n};"
+      },
+      "id": "merge-transcription",
+      "name": "Merge Transcription",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1850, 150]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      },
+      "id": "merge-data",
+      "name": "Merge All Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [2050, 200]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "customer_data",
+              "name": "customer",
+              "value": "={{ $json }}",
+              "type": "object"
+            },
+            {
+              "id": "message_data",
+              "name": "message",
+              "value": "={{ $('Parse Message Data').item.json }}",
+              "type": "object"
+            },
+            {
+              "id": "context_data",
+              "name": "context",
+              "value": "={{ $('Get Conversation Context').item.json }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "prepare-agent-input",
+      "name": "Prepare Agent Input",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [2250, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:5678/webhook/ai-agent",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "call-ai-agent",
+      "name": "Call AI Agent Workflow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2450, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"success\": true, \"messageId\": $json.messageId } }}",
+        "options": {}
+      },
+      "id": "respond-success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2650, 200]
+    }
+  ],
+  "connections": {
+    "Evolution API Webhook": {
+      "main": [[{ "node": "Filter Valid Messages", "type": "main", "index": 0 }]]
+    },
+    "Filter Valid Messages": {
+      "main": [[{ "node": "Parse Message Data", "type": "main", "index": 0 }]]
+    },
+    "Parse Message Data": {
+      "main": [[{ "node": "Filter Incoming Only", "type": "main", "index": 0 }]]
+    },
+    "Filter Incoming Only": {
+      "main": [[{ "node": "Upsert Customer", "type": "main", "index": 0 }]]
+    },
+    "Upsert Customer": {
+      "main": [[{ "node": "Get Conversation Context", "type": "main", "index": 0 }]]
+    },
+    "Get Conversation Context": {
+      "main": [[{ "node": "Is Audio Message?", "type": "main", "index": 0 }]]
+    },
+    "Is Audio Message?": {
+      "main": [
+        [{ "node": "Transcribe Audio (Whisper)", "type": "main", "index": 0 }],
+        [{ "node": "Merge All Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Transcribe Audio (Whisper)": {
+      "main": [[{ "node": "Merge Transcription", "type": "main", "index": 0 }]]
+    },
+    "Merge Transcription": {
+      "main": [[{ "node": "Merge All Data", "type": "main", "index": 1 }]]
+    },
+    "Merge All Data": {
+      "main": [[{ "node": "Prepare Agent Input", "type": "main", "index": 0 }]]
+    },
+    "Prepare Agent Input": {
+      "main": [[{ "node": "Call AI Agent Workflow", "type": "main", "index": 0 }]]
+    },
+    "Call AI Agent Workflow": {
+      "main": [[{ "node": "Respond Success", "type": "main", "index": 0 }]]
+    }
+  }
+}

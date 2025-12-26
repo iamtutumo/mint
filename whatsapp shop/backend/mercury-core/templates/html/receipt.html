@@ -1,0 +1,91 @@
+{% extends "html/base.html" %}
+
+{% block title %}Receipt {{ receipt_number }}{% endblock %}
+
+{% block content %}
+    <div class="header">
+        <h1>PAYMENT RECEIPT</h1>
+        <p class="business-info">
+            Receipt #{{ receipt_number }}<br>
+            Date: {{ payment_date }}
+        </p>
+    </div>
+
+    <div class="document-info">
+        <div>
+            <h3 class="mt-0">{{ business_name }}</h3>
+            <p class="mb-0">{{ business_address | replace('\n', '<br>') | safe }}</p>
+            <p class="mt-0">
+                {% if business_vat %}VAT: {{ business_vat }}<br>{% endif %}
+                {{ business_phone }}
+            </p>
+        </div>
+        <div class="text-right">
+            <p class="mt-0">
+                <strong>Receipt #:</strong> {{ receipt_number }}<br>
+                <strong>Date:</strong> {{ payment_date }}<br>
+                <strong>Payment Method:</strong> {{ payment_method }}<br>
+                <strong>Status:</strong> 
+                <span class="status status-{{ status|lower }}">{{ status|upper }}</span>
+            </p>
+        </div>
+    </div>
+
+    <div class="customer-info">
+        <h3>Received From:</h3>
+        <p class="mb-0"><strong>{{ customer_name }}</strong></p>
+        {% if customer_company %}<p class="mt-0">{{ customer_company }}</p>{% endif %}
+        <p class="mt-0">{{ customer_email }}</p>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Description</th>
+                <th class="text-right">Amount</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Payment for Invoice #{{ invoice_number }}</td>
+                <td class="text-right">{{ amount | format_currency }}</td>
+            </tr>
+            <tr class="total-row">
+                <td><strong>Total Received</strong></td>
+                <td class="text-right"><strong>{{ amount | format_currency }}</strong></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="payment-details">
+        <h4>Payment Details</h4>
+        <p>
+            <strong>Payment Method:</strong> {{ payment_method }}<br>
+            <strong>Transaction ID:</strong> {{ transaction_id }}<br>
+            <strong>Payment Date:</strong> {{ payment_date }}
+        </p>
+    </div>
+
+    {% if invoice_details %}
+    <div class="invoice-details">
+        <h4>Invoice Details</h4>
+        <p>
+            <strong>Invoice #:</strong> {{ invoice_details.number }}<br>
+            <strong>Invoice Date:</strong> {{ invoice_details.date }}<br>
+            <strong>Due Date:</strong> {{ invoice_details.due_date }}<br>
+            <strong>Original Amount:</strong> {{ invoice_details.total | format_currency }}<br>
+            <strong>Amount Paid:</strong> {{ amount | format_currency }}
+            {% if invoice_details.balance > 0 %}
+                <br><strong>Remaining Balance:</strong> {{ invoice_details.balance | format_currency }}
+            {% endif %}
+        </p>
+    </div>
+    {% endif %}
+
+    <div class="thank-you">
+        <h3 class="text-center">Thank you for your payment!</h3>
+        <p class="text-center">
+            We appreciate your business. If you have any questions about this receipt, please contact us at {{ business_email }}.
+        </p>
+    </div>
+{% endblock %}

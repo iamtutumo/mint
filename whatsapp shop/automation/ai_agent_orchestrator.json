@@ -1,0 +1,225 @@
+{
+  "name": "AI Agent Orchestrator",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ai-agent",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "agent-webhook",
+      "name": "Agent Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build conversation history and system context\nconst customer = $json.customer;\nconst message = $json.message;\nconst context = $json.context || {};\n\n// Sales process states\nconst states = [\n  'greeting',\n  'needs_assessment',\n  'product_browsing',\n  'product_details',\n  'cart_review',\n  'checkout',\n  'payment_submission',\n  'order_tracking',\n  'human_handoff'\n];\n\nconst currentState = context.current_state || 'greeting';\n\n// Build system prompt with sales process\nconst systemPrompt = `You are a helpful WhatsApp e-commerce assistant for a shop that sells both physical and digital products.\n\nCurrent conversation state: ${currentState}\n\nSales Process Guidelines:\n1. GREETING: Welcome the customer warmly. Ask how you can help them today.\n2. NEEDS_ASSESSMENT: Understand what they're looking for. Ask clarifying questions.\n3. PRODUCT_BROWSING: Show relevant products from the catalog. Use the knowledge base to find products.\n4. PRODUCT_DETAILS: Provide detailed information about specific products when asked.\n5. CART_REVIEW: Summarize selected products and calculate total.\n6. CHECKOUT: Generate invoice and payment instructions.\n7. PAYMENT_SUBMISSION: Guide customer to submit payment reference.\n8. ORDER_TRACKING: Help customer check order status.\n9. HUMAN_HANDOFF: Connect customer to shop owner when requested.\n\nYou have access to tools:\n- Knowledge base search for product information\n- Product catalog query\n- Order creation and management\n- Invoice generation\n- Email notifications\n- Human agent handoff\n\nCustomer Info:\n- Number: ${customer.whatsapp_number}\n- Name: ${customer.name || 'Unknown'}\n\nAlways:\n- Be conversational and friendly\n- Keep responses concise for WhatsApp\n- Guide conversation through the sales process naturally\n- Don't be pushy, but be helpful\n- Confirm important details before proceeding\n\nCurrent message: \"${message.messageText}\"`;\n\nreturn {\n  systemPrompt: systemPrompt,\n  userMessage: message.messageText,\n  customerId: customer.id,\n  customerNumber: customer.whatsapp_number,\n  currentState: currentState,\n  contextData: context.context_data || {},\n  messageType: message.messageType,\n  mediaUrl: message.mediaUrl || null\n};"
+      },
+      "id": "prepare-agent-context",
+      "name": "Prepare Agent Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "model": "llama3.1:8b",
+        "options": {
+          "temperature": 0.7,
+          "topP": 0.9
+        }
+      },
+      "id": "ollama-llm",
+      "name": "Ollama LLM",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.systemPrompt }}"
+      },
+      "id": "system-prompt",
+      "name": "System Prompt",
+      "type": "@n8n/n8n-nodes-langchain.promptTemplate",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $json.customerId }}"
+      },
+      "id": "memory-buffer",
+      "name": "Conversation Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.2,
+      "position": [650, 400]
+    },
+    {
+      "parameters": {
+        "name": "product_search",
+        "description": "Search the product catalog and knowledge base for products based on customer query. Use this when customer asks about products, categories, or wants to browse items."
+      },
+      "id": "tool-product-search",
+      "name": "Product Search Tool",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 1.1,
+      "position": [650, 500]
+    },
+    {
+      "parameters": {
+        "name": "get_product_details",
+        "description": "Get detailed information about a specific product by product ID. Use this when customer wants more details about a specific product."
+      },
+      "id": "tool-product-details",
+      "name": "Product Details Tool",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 1.1,
+      "position": [650, 600]
+    },
+    {
+      "parameters": {
+        "name": "create_order",
+        "description": "Create a new order with selected products and generate invoice. Use this when customer is ready to purchase. Input should be JSON with product IDs and quantities."
+      },
+      "id": "tool-create-order",
+      "name": "Create Order Tool",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 1.1,
+      "position": [650, 700]
+    },
+    {
+      "parameters": {
+        "name": "check_order_status",
+        "description": "Check the status of an existing order by order number. Use this when customer asks about their order status."
+      },
+      "id": "tool-order-status",
+      "name": "Order Status Tool",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 1.1,
+      "position": [650, 800]
+    },
+    {
+      "parameters": {
+        "name": "submit_payment",
+        "description": "Submit payment reference for an order. Use when customer provides payment confirmation. Input should be JSON with order_number and payment_reference."
+      },
+      "id": "tool-submit-payment",
+      "name": "Submit Payment Tool",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 1.1,
+      "position": [650, 900]
+    },
+    {
+      "parameters": {
+        "name": "contact_human_agent",
+        "description": "Connect customer to a human shop owner. Use this when customer explicitly asks to speak with a person or when you cannot help with their request."
+      },
+      "id": "tool-human-handoff",
+      "name": "Human Handoff Tool",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 1.1,
+      "position": [650, 1000]
+    },
+    {
+      "parameters": {
+        "text": "={{ $json.userMessage }}",
+        "options": {}
+      },
+      "id": "ai-agent",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.6,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE conversation_context \nSET context_data = '{{ $json.contextData }}'::jsonb,\n    current_state = '{{ $json.nextState }}',\n    updated_at = NOW()\nWHERE customer_id = {{ $json.customerId }};\n\nINSERT INTO conversation_context (customer_id, session_id, intent, current_state, context_data)\nSELECT {{ $json.customerId }}, '{{ $json.sessionId }}', '{{ $json.intent }}', '{{ $json.nextState }}', '{{ $json.contextData }}'::jsonb\nWHERE NOT EXISTS (SELECT 1 FROM conversation_context WHERE customer_id = {{ $json.customerId }});",
+        "options": {}
+      },
+      "id": "update-context",
+      "name": "Update Context",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1050, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://evolution-api:8080/message/sendText",
+        "authentication": "genericCredentialType",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"number\": \"{{ $json.customerNumber }}\",\n  \"text\": \"{{ $json.response }}\"\n}",
+        "options": {}
+      },
+      "id": "send-whatsapp",
+      "name": "Send WhatsApp Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"success\": true, \"response\": $json.response } }}",
+        "options": {}
+      },
+      "id": "respond-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1450, 400]
+    }
+  ],
+  "connections": {
+    "Agent Webhook": {
+      "main": [[{ "node": "Prepare Agent Context", "type": "main", "index": 0 }]]
+    },
+    "Prepare Agent Context": {
+      "main": [[{ "node": "AI Agent", "type": "main", "index": 0 }]]
+    },
+    "Ollama LLM": {
+      "ai_languageModel": [[{ "node": "AI Agent", "type": "ai_languageModel", "index": 0 }]]
+    },
+    "System Prompt": {
+      "ai_systemPrompt": [[{ "node": "AI Agent", "type": "ai_systemPrompt", "index": 0 }]]
+    },
+    "Conversation Memory": {
+      "ai_memory": [[{ "node": "AI Agent", "type": "ai_memory", "index": 0 }]]
+    },
+    "Product Search Tool": {
+      "ai_tool": [[{ "node": "AI Agent", "type": "ai_tool", "index": 0 }]]
+    },
+    "Product Details Tool": {
+      "ai_tool": [[{ "node": "AI Agent", "type": "ai_tool", "index": 0 }]]
+    },
+    "Create Order Tool": {
+      "ai_tool": [[{ "node": "AI Agent", "type": "ai_tool", "index": 0 }]]
+    },
+    "Order Status Tool": {
+      "ai_tool": [[{ "node": "AI Agent", "type": "ai_tool", "index": 0 }]]
+    },
+    "Submit Payment Tool": {
+      "ai_tool": [[{ "node": "AI Agent", "type": "ai_tool", "index": 0 }]]
+    },
+    "Human Handoff Tool": {
+      "ai_tool": [[{ "node": "AI Agent", "type": "ai_tool", "index": 0 }]]
+    },
+    "AI Agent": {
+      "main": [[{ "node": "Update Context", "type": "main", "index": 0 }]]
+    },
+    "Update Context": {
+      "main": [[{ "node": "Send WhatsApp Reply", "type": "main", "index": 0 }]]
+    },
+    "Send WhatsApp Reply": {
+      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+    }
+  }
+}

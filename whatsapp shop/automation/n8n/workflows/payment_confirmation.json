@@ -1,0 +1,145 @@
+{
+  "name": "Payment Confirmation Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "event": "payment.received"
+      },
+      "name": "Payment Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getOrderDetails",
+        "parameters": "=orderId={{ $node[\"Payment Webhook\"].json.orderId }}",
+        "options": {}
+      },
+      "name": "Get Order Details",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        450,
+        300
+      ],
+      "credentials": {
+        "httpBasicAuth": "api-credentials"
+      }
+    },
+    {
+      "parameters": {
+        "to": "={{ $node[\"Get Order Details\"].json.customer.phone || $node[\"Payment Webhook\"].json.customerPhone }}",
+        "text": "=✅ Payment Received!\n\nThank you for your payment of ${{ $node[\"Payment Webhook\"].json.amount }}.\n\nOrder: #{{ $node[\"Get Order Details\"].json.orderNumber }}\nStatus: {{ $node[\"Get Order Details\"].json.status }}\n\nWe'll notify you once your order ships!"
+      },
+      "name": "Send Customer Confirmation",
+      "type": "n8n-nodes-whatsapp.sendMessage",
+      "typeVersion": 1,
+      "position": [
+        700,
+        200
+      ],
+      "credentials": {
+        "whatsAppApi": "whatsapp-credentials"
+      }
+    },
+    {
+      "parameters": {
+        "to": "+1234567890",
+        "text": "=💰 New Payment Received!\n\nOrder: #{{ $node[\"Get Order Details\"].json.orderNumber }}\nAmount: ${{ $node[\"Payment Webhook\"].json.amount }}\nCustomer: {{ $node[\"Get Order Details\"].json.customer.name }}"
+      },
+      "name": "Notify Owner",
+      "type": "n8n-nodes-whatsapp.sendMessage",
+      "typeVersion": 1,
+      "position": [
+        700,
+        400
+      ],
+      "credentials": {
+        "whatsAppApi": "whatsapp-credentials"
+      }
+    },
+    {
+      "parameters": {
+        "operation": "updateOrderStatus",
+        "bodyParametersJson": "{\"status\":\"paid\",\"paymentId\":\"{{ $node[\\\"Payment Webhook\\\"].json.paymentId }}\",\"paidAt\":\"{{ $node[\\\"Payment Webhook\\\"].json.paidAt }}\"}",
+        "options": {}
+      },
+      "name": "Update Order Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        950,
+        300
+      ],
+      "credentials": {
+        "httpBasicAuth": "api-credentials"
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Log the successful payment\nconsole.log('Payment processed for order:', $input.item.json);\nreturn $input.item.json;"
+      },
+      "name": "Log Payment",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Payment Webhook": {
+      "main": [
+        [
+          {
+            "node": "Get Order Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Order Details": {
+      "main": [
+        [
+          {
+            "node": "Send Customer Confirmation",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify Owner",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Update Order Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Order Status": {
+      "main": [
+        [
+          {
+            "node": "Log Payment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1.0.0"
+}

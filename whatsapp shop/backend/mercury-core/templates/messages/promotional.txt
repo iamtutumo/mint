@@ -1,0 +1,13 @@
+✨ *{{ campaign_title }}* ✨
+
+{{ campaign_message }}
+
+*Special Offer:* {{ offer_details }}
+Use code: {{ promo_code }}
+Valid until: {{ expiry_date }}
+
+Shop now: {{ campaign_url }}
+
+{{ terms_and_conditions }}
+
+To stop receiving promotional messages, reply STOP

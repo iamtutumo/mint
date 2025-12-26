@@ -1,0 +1,230 @@
+{
+  "name": "WhatsApp Owner Workflow",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "event": "={\n  \"event\": \"message.upsert\",\n  \"conditions\": {\n    \"fromMe\": false,\n    \"remoteJid\": \"+1234567890@s.whatsapp.net\"
+  }\n}"
+      },
+      "name": "WhatsApp Trigger",
+      "type": "n8n-nodes-whatsapp.whatsAppTrigger",
+      "typeVersion": 1,
+      "position": [
+        450,
+        300
+      ],
+      "credentials": {
+        "whatsAppApi": "whatsapp-credentials"
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $node[\"WhatsApp Trigger\"].json.body.eventData.message.conversation}}",
+              "operation": "contains",
+              "value2": "sales"
+            }
+          ]
+        }
+      },
+      "name": "Is Sales Query?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        700,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $node[\"WhatsApp Trigger\"].json.body.eventData.message.conversation}}",
+              "operation": "contains",
+              "value2": "inventory"
+            }
+          ]
+        }
+      },
+      "name": "Is Inventory Query?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getSalesReport",
+        "additionalFields": {
+          "timeRange": "today"
+        }
+      },
+      "name": "Get Sales Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        950,
+        200
+      ],
+      "credentials": {
+        "httpBasicAuth": "api-credentials"
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getInventoryStatus",
+        "additionalFields": {}
+      },
+      "name": "Get Inventory Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        950,
+        300
+      ],
+      "credentials": {
+        "httpBasicAuth": "api-credentials"
+      }
+    },
+    {
+      "parameters": {
+        "text": "=Here's your sales report for today:\n\nTotal Sales: ${{ $node[\"Get Sales Report\"].json.totalSales || 0 }}\nOrders: {{ $node[\"Get Sales Report\"].json.orderCount || 0 }}\nTop Product: {{ $node[\"Get Sales Report\"].json.topProduct || 'N/A' }}"
+      },
+      "name": "Send Sales Report",
+      "type": "n8n-nodes-whatsapp.sendMessage",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        200
+      ],
+      "credentials": {
+        "whatsAppApi": "whatsapp-credentials"
+      }
+    },
+    {
+      "parameters": {
+        "text": "=Inventory Status:\n\n{{ $node[\"Get Inventory Status\"].json.items ? $node[\"Get Inventory Status\"].json.items.map(item => `- ${item.name}: ${item.quantity} in stock`).join('\\n') : 'No items found' }}"
+      },
+      "name": "Send Inventory Status",
+      "type": "n8n-nodes-whatsapp.sendMessage",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        300
+      ],
+      "credentials": {
+        "whatsAppApi": "whatsapp-credentials"
+      }
+    },
+    {
+      "parameters": {
+        "text": "I'm sorry, I didn't understand that. You can ask for 'sales' or 'inventory' updates."
+      },
+      "name": "Send Default Response",
+      "type": "n8n-nodes-whatsapp.sendMessage",
+      "typeVersion": 1,
+      "position": [
+        950,
+        400
+      ],
+      "credentials": {
+        "whatsAppApi": "whatsapp-credentials"
+      }
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp Trigger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp Trigger": {
+      "main": [
+        [
+          {
+            "node": "Is Sales Query?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Is Inventory Query?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Sales Query?": {
+      "main": [
+        [
+          {
+            "node": "Get Sales Report",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Sales Report",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Inventory Query?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Inventory Query?": {
+      "main": [
+        [
+          {
+            "node": "Get Inventory Status",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Inventory Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Default Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1.0.0"
+}

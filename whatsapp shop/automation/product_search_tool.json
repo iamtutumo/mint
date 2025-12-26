@@ -1,0 +1,128 @@
+{
+  "name": "Product Search Tool",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "tool-product-search",
+        "options": {}
+      },
+      "id": "tool-webhook",
+      "name": "Tool Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract search query from tool input\nconst query = $json.query || $json.input || '';\n\nreturn {\n  searchQuery: query,\n  topK: 5\n};"
+      },
+      "id": "parse-input",
+      "name": "Parse Tool Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "model": "nomic-embed-text:latest",
+        "options": {}
+      },
+      "id": "ollama-embeddings",
+      "name": "Ollama Embeddings",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOllama",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "collectionName": "products_knowledge_base",
+        "queryEmbedding": "={{ $json.searchQuery }}",
+        "limit": 5,
+        "options": {
+          "scoreThreshold": 0.7
+        }
+      },
+      "id": "qdrant-search",
+      "name": "Qdrant Vector Search",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreQdrant",
+      "typeVersion": 1,
+      "position": [650, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT p.*, \n  CASE WHEN p.stock_quantity > 0 THEN 'In Stock' \n       WHEN p.product_type = 'digital' THEN 'Available' \n       ELSE 'Out of Stock' \n  END as availability\nFROM products p\nWHERE p.active = true\n  AND (\n    p.name ILIKE '%{{ $json.searchQuery }}%' \n    OR p.description ILIKE '%{{ $json.searchQuery }}%'\n    OR p.category ILIKE '%{{ $json.searchQuery }}%'\n  )\nLIMIT 10;",
+        "options": {}
+      },
+      "id": "db-search",
+      "name": "Database Product Search",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [650, 500]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      },
+      "id": "merge-results",
+      "name": "Merge Search Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combine and deduplicate results from Qdrant and DB\nconst qdrantResults = $input.first().json.results || [];\nconst dbResults = $input.last().json || [];\n\nconst productMap = new Map();\n\n// Add Qdrant results (semantic search)\nqdrantResults.forEach(item => {\n  const product = item.payload;\n  if (product && product.id) {\n    productMap.set(product.id, {\n      ...product,\n      relevanceScore: item.score,\n      source: 'semantic'\n    });\n  }\n});\n\n// Add DB results (keyword search)\ndbResults.forEach(product => {\n  if (!productMap.has(product.id)) {\n    productMap.set(product.id, {\n      ...product,\n      relevanceScore: 0.5,\n      source: 'keyword'\n    });\n  }\n});\n\n// Convert to array and sort by relevance\nconst products = Array.from(productMap.values())\n  .sort((a, b) => b.relevanceScore - a.relevanceScore)\n  .slice(0, 8);\n\n// Format for agent response\nconst formattedProducts = products.map(p => ({\n  id: p.id,\n  name: p.name,\n  description: p.description,\n  category: p.category,\n  price: `$${parseFloat(p.price).toFixed(2)}`,\n  type: p.product_type,\n  availability: p.availability || (p.stock_quantity > 0 ? 'In Stock' : 'Out of Stock'),\n  stock: p.stock_quantity\n}));\n\nconst response = {\n  success: true,\n  count: formattedProducts.length,\n  products: formattedProducts,\n  message: formattedProducts.length > 0 \n    ? `Found ${formattedProducts.length} products matching your search.`\n    : 'No products found matching your search. Try different keywords.'\n};\n\nreturn response;"
+      },
+      "id": "format-response",
+      "name": "Format Tool Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1250, 400]
+    }
+  ],
+  "connections": {
+    "Tool Webhook": {
+      "main": [[{ "node": "Parse Tool Input", "type": "main", "index": 0 }]]
+    },
+    "Parse Tool Input": {
+      "main": [
+        [
+          { "node": "Qdrant Vector Search", "type": "main", "index": 0 },
+          { "node": "Database Product Search", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Ollama Embeddings": {
+      "ai_embedding": [[{ "node": "Qdrant Vector Search", "type": "ai_embedding", "index": 0 }]]
+    },
+    "Qdrant Vector Search": {
+      "main": [[{ "node": "Merge Search Results", "type": "main", "index": 0 }]]
+    },
+    "Database Product Search": {
+      "main": [[{ "node": "Merge Search Results", "type": "main", "index": 1 }]]
+    },
+    "Merge Search Results": {
+      "main": [[{ "node": "Format Tool Response", "type": "main", "index": 0 }]]
+    },
+    "Format Tool Response": {
+      "main": [[{ "node": "Respond", "type": "main", "index": 0 }]]
+    }
+  }
+}

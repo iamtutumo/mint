@@ -1,0 +1,117 @@
+{% extends "html/base.html" %}
+
+{% block title %}Proposal {{ proposal_number }}{% endblock %}
+
+{% block content %}
+    <div class="header">
+        <h1>BUSINESS PROPOSAL</h1>
+        <p class="business-info">
+            Proposal #{{ proposal_number }}<br>
+            Date: {{ proposal_date }}<br>
+            Valid Until: {{ valid_until }}
+        </p>
+    </div>
+
+    <div class="document-info">
+        <div>
+            <h3 class="mt-0">{{ business_name }}</h3>
+            <p class="mb-0">{{ business_address | replace('\n', '<br>') | safe }}</p>
+            <p class="mt-0">
+                {% if business_vat %}VAT: {{ business_vat }}<br>{% endif %}
+                {{ business_phone }}<br>
+                {{ business_email }}
+            </p>
+        </div>
+        <div class="text-right">
+            <h3 class="mt-0">Prepared For:</h3>
+            <p class="mb-0"><strong>{{ client_name }}</strong></p>
+            {% if client_company %}<p class="mt-0">{{ client_company }}</p>{% endif %}
+            <p class="mt-0">{{ client_email }}</p>
+        </div>
+    </div>
+
+    <div class="proposal-summary">
+        <h3>Proposal Summary</h3>
+        <p>{{ summary | safe }}</p>
+    </div>
+
+    <h3>Proposed Services</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Service</th>
+                <th>Description</th>
+                <th class="text-right">Quantity</th>
+                <th class="text-right">Unit Price</th>
+                <th class="text-right">Amount</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in services %}
+            <tr>
+                <td>{{ item.name }}</td>
+                <td>{{ item.description or 'N/A' }}</td>
+                <td class="text-right">{{ item.quantity }}</td>
+                <td class="text-right">{{ item.unit_price | format_currency }}</td>
+                <td class="text-right">{{ (item.quantity * item.unit_price) | format_currency }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td colspan="4" class="text-right"><strong>Subtotal:</strong></td>
+                <td class="text-right">{{ subtotal | format_currency }}</td>
+            </tr>
+            {% if tax_amount > 0 %}
+            <tr>
+                <td colspan="4" class="text-right">
+                    <strong>Tax ({{ tax_rate }}%):</strong>
+                </td>
+                <td class="text-right">{{ tax_amount | format_currency }}</td>
+            </tr>
+            {% endif %}
+            <tr class="total-row">
+                <td colspan="4" class="text-right"><strong>Total:</strong></td>
+                <td class="text-right"><strong>{{ total | format_currency }}</strong></td>
+            </tr>
+        </tfoot>
+    </table>
+
+    {% if terms %}
+    <div class="terms">
+        <h3>Terms & Conditions</h3>
+        <div>{{ terms | safe }}</div>
+    </div>
+    {% endif %}
+
+    {% if notes %}
+    <div class="notes">
+        <h3>Additional Notes</h3>
+        <p>{{ notes | safe }}</p>
+    </div>
+    {% endif %}
+
+    <div class="acceptance" style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee;">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 30px;">
+            <div style="width: 45%;">
+                <div style="border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-bottom: 10px;">
+                    <strong>Client's Signature</strong>
+                </div>
+                <div style="height: 50px; margin-bottom: 5px;"></div>
+                <div>Date: _________________</div>
+            </div>
+            <div style="width: 45%;">
+                <div style="border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-bottom: 10px;">
+                    <strong>Authorized Signature</strong>
+                </div>
+                <div style="height: 50px; margin-bottom: 5px;"></div>
+                <div>Date: _________________</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="thank-you" style="text-align: center; margin: 30px 0;">
+        <p>Thank you for considering our proposal. We look forward to working with you!</p>
+        <p>If you have any questions, please contact us at {{ business_email }} or call {{ business_phone }}.</p>
+    </div>
+{% endblock %}

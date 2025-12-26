@@ -1,0 +1,27 @@
+🛍️ *Order Confirmation* 🛍️
+
+Hello {{ customer_name }},
+
+Thank you for your order! Here are your order details:
+
+*Order #{{ order_id }}*
+{{ order_date }}
+
+*Items:*
+{% for item in items %}
+- {{ item.quantity }}x {{ item.name }} ({{ item.variant }}) - {{ item.price | format_currency }}
+{% endfor %}
+
+*Subtotal:* {{ subtotal | format_currency }}
+*Shipping:* {{ shipping_cost | format_currency }}
+*Total:* {{ total | format_currency }}
+
+*Delivery Address:*
+{{ shipping_address }}
+
+You'll receive another message when your order ships. Track your order here:
+{{ order_tracking_url }}
+
+For any questions, reply to this message or call us at {{ support_phone }}.
+
+Thank you for shopping with us! 🎉

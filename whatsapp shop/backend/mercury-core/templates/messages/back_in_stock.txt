@@ -1,0 +1,14 @@
+🎉 *Back in Stock!* 🎉
+
+Hello {{ customer_name }},
+
+Great news! The item you were waiting for is back in stock:
+
+*{{ product_name }}*
+{{ product_url }}
+
+Hurry! Only {{ stock_quantity }} available at this price.
+
+Shop now: {{ shop_url }}
+
+This notification was sent because you asked to be notified when this item was back in stock. To manage your notifications, visit: {{ notification_settings_url }}

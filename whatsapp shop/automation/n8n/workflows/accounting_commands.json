@@ -1,0 +1,150 @@
+{
+  "name": "Accounting Commands Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "event": "{\n  \"event\": \"message.upsert\",\n  \"conditions\": {\n    \"fromMe\": false,\n    \"remoteJid\": \"+1234567890@s.whatsapp.net\"\n  }\n}"
+      },
+      "name": "WhatsApp Trigger",
+      "type": "n8n-nodes-whatsapp.whatsAppTrigger",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "credentials": {
+        "whatsAppApi": "whatsapp-credentials"
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $node[\"WhatsApp Trigger\"].json.body.eventData.message.conversation}}",
+              "operation": "startsWith",
+              "value2": "/accounting"
+            }
+          ]
+        }
+      },
+      "name": "Is Accounting Command?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $node[\"WhatsApp Trigger\"].json.body.eventData.message.conversation.toLowerCase()}}",
+              "operation": "contains",
+              "value2": "sales"
+            }
+          ]
+        }
+      },
+      "name": "Is Sales Report?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [700, 200]
+    },
+    {
+      "parameters": {
+        "operation": "getSalesReport",
+        "parameters": "period=today",
+        "options": {}
+      },
+      "name": "Get Sales Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [950, 200],
+      "credentials": {
+        "httpBasicAuth": "api-credentials"
+      }
+    },
+    {
+      "parameters": {
+        "to": "={{ $node[\"WhatsApp Trigger\"].json.body.eventData.key.remoteJid }}",
+        "text": "=📊 Sales Report (Today)\n\nTotal Sales: ${{ $node[\"Get Sales Report\"].json.totalSales || 0 }}\nOrders: {{ $node[\"Get Sales Report\"].json.orderCount || 0 }}\n\nTop Products:\n{{ $node[\"Get Sales Report\"].json.topProducts ? $node[\"Get Sales Report\"].json.topProducts.map((p, i) => `${i+1}. ${p.name}: $${p.amount} (${p.quantity} sold)`).join('\\n') : 'No sales data' }}"
+      },
+      "name": "Send Sales Report",
+      "type": "n8n-nodes-whatsapp.sendMessage",
+      "typeVersion": 1,
+      "position": [1200, 200],
+      "credentials": {
+        "whatsAppApi": "whatsapp-credentials"
+      }
+    },
+    {
+      "parameters": {
+        "to": "={{ $node[\"WhatsApp Trigger\"].json.body.eventData.key.remoteJid }}",
+        "text": "❌ Unrecognized accounting command. Available commands:\n\n/accounting sales - Get today's sales report\n/accounting expenses - Get expense report\n/accounting profit - Get profit analysis"
+      },
+      "name": "Send Help Message",
+      "type": "n8n-nodes-whatsapp.sendMessage",
+      "typeVersion": 1,
+      "position": [950, 400],
+      "credentials": {
+        "whatsAppApi": "whatsapp-credentials"
+      }
+    }
+  ],
+  "connections": {
+    "WhatsApp Trigger": {
+      "main": [
+        [
+          {
+            "node": "Is Accounting Command?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Accounting Command?": {
+      "main": [
+        [
+          {
+            "node": "Is Sales Report?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Help Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Sales Report?": {
+      "main": [
+        [
+          {
+            "node": "Get Sales Report",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Sales Report",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Help Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1.0.0"
+}

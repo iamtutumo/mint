@@ -1,0 +1,20 @@
+🛒 *Your Cart is Waiting!* 🛒
+
+Hi {{ customer_name }},
+
+We noticed you left some items in your cart. They're still available and waiting for you!
+
+*Your Items:*
+{% for item in items %}
+- {{ item.quantity }}x {{ item.name }} - {{ item.price | format_currency }}
+{% endfor %}
+
+*Total: {{ total | format_currency }}*
+
+Complete your purchase now before they're gone! 🚀
+
+{{ checkout_url }}
+
+Need help? Reply to this message or call us at {{ support_phone }}.
+
+*Special Offer:* Use code CART10 for 10% off your first order! (Valid for 24 hours) 🎁

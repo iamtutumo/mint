@@ -1,0 +1,176 @@
+{% extends "html/base.html" %}
+
+{% block title %}Order Confirmation {{ order_number }}{% endblock %}
+
+{% block content %}
+    <div class="header">
+        <h1>ORDER CONFIRMATION</h1>
+        <p class="business-info">
+            Order #{{ order_number }}<br>
+            Date: {{ order_date }}
+        </p>
+    </div>
+
+    <div class="customer-info">
+        <div style="display: flex; justify-content: space-between;">
+            <div style="flex: 1; margin-right: 20px;">
+                <h3>Shipping Address</h3>
+                <p class="mb-0"><strong>{{ shipping_address.name }}</strong></p>
+                <p class="mt-0">
+                    {{ shipping_address.street }}<br>
+                    {% if shipping_address.street2 %}{{ shipping_address.street2 }}<br>{% endif %}
+                    {{ shipping_address.city }}, {{ shipping_address.state }} {{ shipping_address.zip_code }}<br>
+                    {{ shipping_address.country }}<br>
+                    {{ shipping_address.phone }}
+                </p>
+            </div>
+            <div style="flex: 1;">
+                <h3>Billing Address</h3>
+                <p class="mb-0"><strong>{{ billing_address.name }}</strong></p>
+                <p class="mt-0">
+                    {{ billing_address.street }}<br>
+                    {% if billing_address.street2 %}{{ billing_address.street2 }}<br>{% endif %}
+                    {{ billing_address.city }}, {{ billing_address.state }} {{ billing_address.zip_code }}<br>
+                    {{ billing_address.country }}<br>
+                    {{ billing_address.phone }}
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div style="margin: 20px 0; padding: 15px; background-color: #e9f7fe; border-radius: 5px;">
+        <h3 style="margin-top: 0; color: #0c5460;">Order Status: <span class="status status-{{ order_status|lower }}">{{ order_status|upper }}</span></h3>
+        <p>We've received your order and it's being processed. You'll receive a shipping confirmation email with tracking information once your order ships.</p>
+        {% if tracking_number %}
+            <p><strong>Tracking Number:</strong> {{ tracking_number }}<br>
+            <strong>Shipping Carrier:</strong> {{ shipping_carrier }}</p>
+        {% endif %}
+    </div>
+
+    <h3>Order Summary</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Item</th>
+                <th>SKU</th>
+                <th class="text-right">Price</th>
+                <th class="text-right">Qty</th>
+                <th class="text-right">Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in items %}
+            <tr>
+                <td>
+                    <strong>{{ item.name }}</strong>
+                    {% if item.variant %}<br><small>{{ item.variant }}</small>{% endif %}
+                    {% if item.digital %}<br><span class="status" style="background-color: #d1ecf1; color: #0c5460; font-size: 11px; padding: 2px 6px;">DIGITAL</span>{% endif %}
+                </td>
+                <td>{{ item.sku or 'N/A' }}</td>
+                <td class="text-right">{{ item.price | format_currency }}</td>
+                <td class="text-right">{{ item.quantity }}</td>
+                <td class="text-right">{{ (item.quantity * item.price) | format_currency }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td colspan="4" class="text-right"><strong>Subtotal:</strong></td>
+                <td class="text-right">{{ subtotal | format_currency }}</td>
+            </tr>
+            {% if shipping_cost > 0 %}
+            <tr>
+                <td colspan="4" class="text-right"><strong>Shipping & Handling:</strong></td>
+                <td class="text-right">{{ shipping_cost | format_currency }}</td>
+            </tr>
+            {% endif %}
+            {% if tax_amount > 0 %}
+            <tr>
+                <td colspan="4" class="text-right"><strong>Tax ({{ tax_rate }}%):</strong></td>
+                <td class="text-right">{{ tax_amount | format_currency }}</td>
+            </tr>
+            {% endif %}
+            {% if discount_amount > 0 %}
+            <tr>
+                <td colspan="4" class="text-right"><strong>Discount ({{ discount_code }}):</strong></td>
+                <td class="text-right">-{{ discount_amount | format_currency }}</td>
+            </tr>
+            {% endif %}
+            <tr class="total-row">
+                <td colspan="4" class="text-right"><strong>Grand Total:</strong></td>
+                <td class="text-right"><strong>{{ total | format_currency }}</strong></td>
+            </tr>
+            {% if amount_paid > 0 %}
+            <tr>
+                <td colspan="4" class="text-right"><strong>Amount Paid:</strong></td>
+                <td class="text-right">-{{ amount_paid | format_currency }}</td>
+            </tr>
+            <tr class="total-row">
+                <td colspan="4" class="text-right"><strong>Amount Due:</strong></td>
+                <td class="text-right"><strong>{{ amount_due | format_currency }}</strong></td>
+            </tr>
+            {% endif %}
+        </tfoot>
+    </table>
+
+    {% if digital_items %}
+    <div style="margin: 30px 0; padding: 15px; background-color: #e8f5e9; border-radius: 5px;">
+        <h3 style="margin-top: 0; color: #155724;">Your Digital Items</h3>
+        <p>You can access your digital items using the links below:</p>
+        <ul>
+            {% for item in digital_items %}
+            <li>
+                <strong>{{ item.name }}</strong> - 
+                <a href="{{ item.download_url }}" style="color: #28a745; text-decoration: underline;">Download</a>
+                {% if item.download_expires %}
+                    <br><small>Expires: {{ item.download_expires }}</small>
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    <div style="margin: 30px 0; display: flex; justify-content: space-between;">
+        <div style="flex: 1; margin-right: 20px; padding: 15px; background-color: #f8f9fa; border-radius: 5px;">
+            <h4 style="margin-top: 0;">Shipping Method</h4>
+            <p class="mb-0"><strong>{{ shipping_method }}</strong></p>
+            <p class="mt-0">
+                {% if estimated_delivery %}
+                    Estimated Delivery: {{ estimated_delivery }}<br>
+                {% endif %}
+                {% if tracking_number %}
+                    Tracking: <a href="{{ tracking_url }}" style="color: #007bff; text-decoration: none;">#{{ tracking_number }}</a>
+                {% else %}
+                    Tracking information will be available soon.
+                {% endif %}
+            </p>
+        </div>
+        <div style="flex: 1; padding: 15px; background-color: #f8f9fa; border-radius: 5px;">
+            <h4 style="margin-top: 0;">Payment Method</h4>
+            <p class="mb-0"><strong>{{ payment_method }}</strong></p>
+            <p class="mt-0">
+                {% if payment_status %}
+                    Status: <span class="status status-{{ payment_status|lower }}">{{ payment_status|upper }}</span><br>
+                {% endif %}
+                {% if transaction_id %}
+                    Transaction ID: {{ transaction_id }}
+                {% endif %}
+            </p>
+        </div>
+    </div>
+
+    <div class="thank-you" style="text-align: center; margin: 40px 0;">
+        <h2>Thank you for your order!</h2>
+        <p>We've received your order and will process it as soon as possible.</p>
+        <p>You can check the status of your order by <a href="{{ order_status_url }}" style="color: #007bff; text-decoration: none;">clicking here</a>.</p>
+    </div>
+
+    <div class="footer">
+        <p class="mb-0">{{ business_name }} | {{ business_phone }} | {{ business_email }}</p>
+        <p class="mt-0">
+            Need help? <a href="{{ contact_url }}" style="color: #007bff; text-decoration: none;">Contact our support team</a> or 
+            <a href="{{ faq_url }}" style="color: #007bff; text-decoration: none;">visit our FAQ</a>.
+        </p>
+    </div>
+{% endblock %}

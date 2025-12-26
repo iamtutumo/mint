@@ -1,0 +1,15 @@
+📝 *We'd Love Your Feedback!* 📝
+
+Hi {{ customer_name }},
+
+Thank you for your recent order (#{{ order_id }}). We hope you're enjoying your purchase!
+
+Could you spare a moment to share your experience? Your feedback helps us improve.
+
+Rate your experience: {{ feedback_url }}
+
+As a thank you, here's a coupon for your next purchase: {{ coupon_code }} ({{ coupon_discount }}% off, valid for 30 days)
+
+Thank you for being a valued customer! 🙏
+
+- The {{ business_name }} Team

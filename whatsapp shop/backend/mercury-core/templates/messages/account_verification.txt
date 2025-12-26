@@ -1,0 +1,14 @@
+🔐 *Account Verification* 🔐
+
+Hello {{ customer_name }},
+
+Your verification code is:
+
+*{{ verification_code }}*
+
+This code will expire in {{ expiry_minutes }} minutes. Please do not share it with anyone.
+
+If you didn't request this code, please ignore this message or contact support immediately.
+
+Thank you,
+{{ business_name }}

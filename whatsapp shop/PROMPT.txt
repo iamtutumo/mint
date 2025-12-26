@@ -1,0 +1,1451 @@
+
+# Project Overview
+
+This project is a **WhatsApp-first AI Commerce & Operations Platform** designed for small to medium shops that sell **physical products, digital products, and services**.
+
+The system combines:
+
+* A **FastAPI microservices backend**
+* A **minimal HTML customer storefront**
+* A **WhatsApp AI bot** (via Evolution API / n8n)
+* **LLM-driven command understanding**
+* **Accounting, inventory, documents, and reporting**
+* **PDF document generation with security**
+* **Cloud object storage (MinIO)**
+* **Google Calendar service booking**
+
+The core principle is:
+
+> **Customers interact naturally (web or WhatsApp), while the shop owner controls the entire business using WhatsApp commands — securely and auditable.**
+
+---
+
+# High-Level Architecture
+
+The system consists of **six major layers**:
+
+1. **Customer Interaction Layer**
+2. **WhatsApp AI Command Layer**
+3. **Backend Microservices Layer**
+4. **AI Orchestration & Agent Layer**
+5. **Data & Storage Layer**
+6. **External Integrations Layer**
+
+Each layer is independent but coordinated.
+
+---
+
+## 1. Customer Interaction Layer
+
+### 1.1 Minimal HTML Frontend (Customer-Facing)
+
+A lightweight, static HTML frontend serves as:
+
+* Product catalog
+* Service catalog
+* Order initiation interface
+* Order status lookup interface
+
+The frontend:
+
+* Does **not** handle payments
+* Does **not** manage business logic
+* Only **calls backend APIs**
+
+### Customer Flow
+
+1. Customer browses products/services
+2. Customer adds items or selects a service
+3. Customer clicks **Checkout**
+4. System detects:
+
+   * Mobile + WhatsApp → redirect to WhatsApp
+   * Desktop / no WhatsApp → show order confirmation page
+5. Order number is generated
+6. Customer completes confirmation via:
+
+   * WhatsApp
+   * Or payment confirmation message on the website
+7. Backend notifies shop owner via WhatsApp (through n8n)
+
+### Order Status Checking
+
+Customers can:
+
+* Enter order number on website
+* Click “Check Order Status”
+* Backend returns real-time FSM state
+
+There is also a **“Continue on WhatsApp”** button that shifts the entire journey to WhatsApp.
+
+---
+
+## 2. WhatsApp AI Command Layer
+
+### 2.1 WhatsApp Bot
+
+The WhatsApp bot is the **primary control interface for the shop owner**.
+
+Capabilities:
+
+* Understand natural language commands
+* Authenticate sender phone numbers
+* Route commands to correct backend services
+* Return structured responses or PDFs
+
+The bot supports:
+
+* Owner commands
+* Customer interactions
+* System notifications
+
+---
+
+### 2.2 Owner Authentication & Authorization
+
+Only **pre-registered owner phone numbers** can:
+
+* Change FSM states
+* Modify inventory
+* Create expenses
+* Generate reports
+* Access accounting data
+
+Unauthorized numbers:
+
+* Can only act as customers
+* Cannot execute admin commands
+
+Critical actions (inventory adjustments, accounting overrides) require:
+
+* A **super-user password confirmation**
+* Or a one-time confirmation flow
+
+---
+
+## 3. Backend Microservices Layer
+
+The backend is composed of **independent FastAPI microservices**, each responsible for a specific domain.
+
+---
+
+### 3.1 Order Management Service
+
+Responsibilities:
+
+* Create and manage orders
+* Maintain order lifecycle using an FSM (Finite State Machine)
+* Expose customer-facing and owner-facing endpoints
+
+FSM controls:
+
+* Draft
+* Pending payment
+* Confirmed
+* Processing
+* Dispatched
+* Completed
+* Cancelled
+
+FSM transitions:
+
+* Are validated
+* Are logged
+* Can only be changed by:
+
+  * System events
+  * Authorized owner commands
+
+---
+
+### 3.2 Product & Inventory Service
+
+Supports **three product types**:
+
+#### 1. Stockable Products
+
+* Physical goods
+* Track quantity on hand
+* Increase stock via purchases
+* Decrease stock via sales
+
+#### 2. Digital Products
+
+* PDFs, files, links
+* No stock quantity
+* Delivered only after payment confirmation
+* Secure download link generated dynamically
+
+#### 3. Service Products
+
+* Appointments or time-based services
+* No stock quantity
+* Integrated with Google Calendar
+* Booking requests are **tentative**
+* Only confirmed after owner approval
+
+Inventory Controls:
+
+* Purchases increase stock
+* Sales decrease stock
+* Manual adjustments require super-user confirmation
+* Inventory history is logged
+
+---
+
+### 3.3 Service Booking & Calendar Integration
+
+Service products:
+
+* Generate booking requests
+* Interact with AI to propose time slots
+* Create tentative bookings
+
+Final booking:
+
+* Requires owner confirmation
+* Can be free or paid
+* On confirmation → event is pushed to Google Calendar
+
+---
+
+### 3.4 Accounting & Finance Service
+
+Implements a **lightweight accounting engine**.
+
+Features:
+
+* Chart of Accounts (COA)
+* Income accounts
+* Expense accounts
+* Cash, bank, and mobile money accounts
+
+Capabilities:
+
+* Record sales
+* Record expenses
+* Categorize transactions using AI
+* Track account movements
+* Support transfers (cash → bank)
+
+Owner Commands:
+
+* “Add transport expense 50,000 cash”
+* “Record electricity bill paid via bank”
+* “Move 200,000 from cash to bank”
+
+---
+
+### 3.5 Document Generation Service
+
+Generates **secure PDFs from HTML templates**.
+
+Supported documents:
+
+* Invoices
+* Payment receipts
+* Product proposals
+* Order confirmations
+* Order status updates
+* End-of-day reports
+* Inventory reports
+* Financial statements
+
+Features:
+
+* HTML-only templates
+* Dynamic data injection
+* PDF generation
+* Password protection
+* Stored in MinIO
+* Download links returned via WhatsApp or web
+
+---
+
+### 3.6 Reporting & Analytics Service
+
+Generates business reports on demand:
+
+Operational:
+
+* Orders summary
+* Fast-moving products
+* Revenue per product
+* Inventory levels
+
+Financial:
+
+* Income statement
+* Expense report
+* Profit & Loss
+* Balance sheet
+* Cash flow statement
+* Bank statement
+
+Reports are:
+
+* Triggered by WhatsApp commands
+* Generated using templates
+* Delivered as PDFs
+
+---
+
+### 3.7 Customer Feedback & Satisfaction Service
+
+After order completion:
+
+* Customer receives survey link or WhatsApp prompt
+* Feedback is stored
+* Ratings are aggregated
+* Owner can request satisfaction reports
+
+---
+
+## 4. AI Orchestration & Agent Layer
+
+### 4.1 LLM-Driven Command Interpretation
+
+The LLM:
+
+* Parses natural language messages
+* Identifies intent
+* Extracts entities
+* Routes requests to correct services
+
+Examples:
+
+* “Change order 1245 to dispatched”
+* “Show today’s sales”
+* “Add expense fuel 80,000”
+* “What is my stock level for sugar?”
+
+The AI **does not execute actions directly**.
+It:
+
+* Produces structured commands
+* Passes them to backend services
+* Backend validates and executes
+
+---
+
+### 4.2 Multi-Agent Design
+
+Agents include:
+
+* Order Agent
+* Inventory Agent
+* Accounting Agent
+* Reporting Agent
+* Booking Agent
+* Document Agent
+
+Each agent:
+
+* Has a narrow responsibility
+* Communicates via internal APIs
+* Is orchestrated by n8n or a central router
+
+---
+
+## 5. Data & Storage Layer
+
+### 5.1 Database
+
+Relational database stores:
+
+* Orders
+* Products
+* Inventory movements
+* Accounting entries
+* Users & roles
+* FSM transitions
+* Customer feedback
+
+Auditability is a priority.
+
+---
+
+### 5.2 Object Storage (MinIO)
+
+MinIO stores:
+
+* Generated PDFs
+* Digital product files
+* Report archives
+* Receipts and invoices
+
+Features:
+
+* Versioning
+* Secure access
+* Time-limited links
+
+---
+
+## 6. External Integrations Layer
+
+### 6.1 WhatsApp (Evolution API)
+
+Used for:
+
+* Customer communication
+* Owner commands
+* Notifications
+* Report delivery
+
+---
+
+### 6.2 n8n Automation
+
+n8n orchestrates:
+
+* Webhook handling
+* WhatsApp message routing
+* AI agent execution
+* Notifications
+* External API calls
+
+---
+
+### 6.3 Google Calendar
+
+Used for:
+
+* Service bookings
+* Appointment confirmations
+* Calendar sync
+
+---
+
+# Non-Functional Requirements
+
+* Modular microservices
+* Secure role-based access
+* Full audit logs
+* Stateless services
+* Horizontal scalability
+* HTML-only templates
+* Password-protected PDFs
+* Natural language first UX
+
+---
+
+# Final Outcome
+
+The result is a **WhatsApp-native AI commerce OS** where:
+
+* Customers shop simply
+* Owners run the entire business from WhatsApp
+* AI reduces manual work
+* Accounting, inventory, and reporting are unified
+* Documents are automated and secure
+* The system is extensible and production-ready
+
+
+# 🌌 MERCURY COMMERCE PLATFORM – FULL PROJECT STRUCTURE
+
+```
+mercury-platform/
+│
+├── backend/
+│   └── mercury-core/                     # FastAPI microservice (brain of the system)
+│       ├── app/
+│       │   ├── main.py                   # FastAPI entrypoint
+│       │
+│       │   ├── core/
+│       │   │   ├── config.py             # Env config (DB, MinIO, Calendar, Secrets)
+│       │   │   ├── security.py           # Owner phone auth, superuser password
+│       │   │   ├── logging.py
+│       │   │   └── events.py             # Startup/shutdown hooks
+│       │
+│       │   ├── db/
+│       │   │   ├── base.py
+│       │   │   ├── session.py
+│       │   │   └── init_db.py
+│       │
+│       │   ├── models/
+│       │   │   ├── user.py
+│       │   │   ├── product.py            # physical | digital | service
+│       │   │   ├── inventory.py
+│       │   │   ├── order.py
+│       │   │   ├── order_item.py
+│       │   │   ├── payment.py
+│       │   │   ├── booking.py            # service bookings
+│       │   │   ├── survey.py
+│       │   │   ├── document.py
+│       │   │   ├── account.py            # chart of accounts
+│       │   │   └── transaction.py        # journal entries
+│       │
+│       │   ├── schemas/
+│       │   │   ├── product.py
+│       │   │   ├── order.py
+│       │   │   ├── booking.py
+│       │   │   ├── payment.py
+│       │   │   ├── account.py
+│       │   │   ├── transaction.py
+│       │   │   ├── document.py
+│       │   │   └── survey.py
+│       │
+│       │   ├── fsm/
+│       │   │   ├── order_states.py       # draft → paid → dispatched → completed
+│       │   │   ├── booking_states.py     # pending → confirmed → cancelled
+│       │   │   └── transitions.py
+│       │
+│       │   ├── services/
+│       │   │   ├── product_service.py
+│       │   │   ├── inventory_service.py
+│       │   │   ├── order_service.py
+│       │   │   ├── payment_service.py
+│       │   │   ├── booking_service.py    # Google Calendar integration
+│       │   │   ├── document_service.py   # HTML → PDF → password → MinIO
+│       │   │   ├── accounting_service.py # COA + transactions + reports
+│       │   │   └── survey_service.py
+│       │
+│       │   ├── documents/
+│       │   │   ├── renderer.py
+│       │   │   ├── pdf.py
+│       │   │   ├── security.py
+│       │   │   └── storage.py             # MinIO
+│       │
+│       │   ├── templates/
+│       │   │   ├── html/
+│       │   │   │   ├── base.html
+│       │   │   │   ├── invoice.html
+│       │   │   │   ├── receipt.html
+│       │   │   │   ├── proposal.html
+│       │   │   │   ├── order_confirmation.html
+│       │   │   │   ├── order_status.html
+│       │   │   │   ├── service_booking.html
+│       │   │   │   ├── inventory_report.html
+│       │   │   │   ├── profit_loss.html
+│       │   │   │   ├── balance_sheet.html
+│       │   │   │   ├── cashflow.html
+│       │   │   │   └── bank_statement.html
+│       │   │   └── messages/
+│       │   │       ├── whatsapp_order.txt
+│       │   │       ├── whatsapp_owner.txt
+│       │   │       └── survey.txt
+│       │
+│       │   ├── api/
+│       │   │   └── v1/
+│       │   │       ├── router.py
+│       │   │       ├── products.py
+│       │   │       ├── orders.py
+│       │   │       ├── bookings.py
+│       │   │       ├── inventory.py
+│       │   │       ├── payments.py
+│       │   │       ├── documents.py
+│       │   │       ├── accounts.py
+│       │   │       ├── transactions.py
+│       │   │       ├── reports.py
+│       │   │       └── webhooks.py        # n8n / WhatsApp / AI
+│       │
+│       │   ├── tasks/
+│       │   │   ├── expiry.py              # order & booking expiration
+│       │   │   └── notifications.py
+│       │
+│       │   └── utils/
+│       │       ├── llm_parser.py          # natural language → commands
+│       │       ├── money.py
+│       │       ├── time.py
+│       │       └── ids.py
+│       │
+│       ├── migrations/
+│       ├── tests/
+│       ├── Dockerfile
+│       ├── docker-compose.yml
+│       ├── requirements.txt
+│       └── README.md
+│
+├── frontend/
+│   ├── index.html                         # shop home
+│   ├── cart.html
+│   ├── order_status.html
+│   ├── js/
+│   │   ├── api.js                         # Mercury API calls
+│   │   ├── cart.js
+│   │   └── main.js
+│   ├── css/
+│   │   └── style.css
+│   ├── components/
+│   │   └── service_picker.html            # date/time picker
+│   └── templates/
+│       └── email_order_form.html           # desktop fallback
+│
+├── automation/
+│   └── n8n/
+│       ├── workflows/
+│       │   ├── whatsapp_customer.json
+│       │   ├── whatsapp_owner.json
+│       │   ├── payment_confirmation.json
+│       │   ├── service_booking.json
+│       │   ├── inventory_alerts.json
+│       │   ├── accounting_commands.json
+│       │   └── surveys.json
+│       └── credentials/
+│
+├── ai/
+│   ├── ollama/
+│   │   ├── models/
+│   │   └── prompts/
+│   │       ├── customer_agent.txt
+│   │       ├── owner_agent.txt
+│   │       ├── accounting_agent.txt
+│   │       └── booking_agent.txt
+│   └── qdrant/
+│       ├── collections/
+│       │   ├── products
+│       │   ├── faqs
+│       │   └── policies
+│
+├── infra/
+│   ├── minio/
+│   ├── postgres/
+│   ├── qdrant/
+│   └── reverse-proxy/
+│
+└── README.md
+```
+
+---
+
+## 🧠 What This Structure Enables
+
+* WhatsApp AI commerce (Evolution API + n8n)
+* FSM-controlled orders & bookings
+* Physical, digital, and service products
+* Google Calendar bookings (owner-approved)
+* Inventory & supplier purchases
+* Full accounting engine (COA, P&L, Balance Sheet, Cashflow)
+* Secure PDF documents (password-protected, MinIO)
+* Customer web shop + WhatsApp checkout
+* AI-driven natural language commands for owner
+* Fully auditable & extensible
+
+---
+
+Below is a **task-by-task implementation roadmap**, written as a **practical execution plan** you could hand to a senior engineering team or use yourself to build the system incrementally.
+No code, only **what to build, in what order, and why**.
+
+I’ve structured this in **phases**, with **clear deliverables**, **dependencies**, and **exit criteria** per phase.
+
+---
+
+# TASK-BY-TASK IMPLEMENTATION ROADMAP
+
+---
+
+## PHASE 0 — FOUNDATIONS & DECISIONS (Short but Critical)
+
+### 0.1 Define System Boundaries
+
+**Tasks**
+
+* Finalize which features are **MVP** vs **Phase 2**
+* Lock WhatsApp provider (Evolution API)
+* Lock AI stack (LLM, embeddings if needed)
+* Lock payment confirmation method (manual vs API-based)
+
+**Deliverables**
+
+* Architecture decision record (ADR)
+* Feature scope document
+
+**Exit Criteria**
+
+* No ambiguous responsibilities between services
+
+---
+
+### 0.2 Security & Governance Baseline
+
+**Tasks**
+
+* Define owner phone numbers
+* Define super-user authentication method
+* Define audit logging requirements
+* Define data retention policies
+
+**Deliverables**
+
+* Security model document
+* Role & permission matrix
+
+**Exit Criteria**
+
+* All privileged actions have protection rules
+
+---
+
+## PHASE 1 — CORE PLATFORM SKELETON
+
+### 1.1 Backend Infrastructure Setup
+
+**Tasks**
+
+* Create FastAPI monorepo or service registry
+* Define service naming conventions
+* Setup shared configuration system
+* Setup logging and error handling standards
+
+**Deliverables**
+
+* Running FastAPI shell services
+* Health-check endpoints
+
+**Exit Criteria**
+
+* Services can start, stop, and talk to DB
+
+---
+
+### 1.2 Database Schema Design
+
+**Tasks**
+
+* Design core entities:
+
+  * Orders
+  * Products
+  * Inventory movements
+  * Accounts & journal entries
+  * Documents
+  * Users & roles
+* Design FSM state tables
+* Design audit log tables
+
+**Deliverables**
+
+* ERD diagram
+* Migration scripts
+
+**Exit Criteria**
+
+* Schema supports **future features without redesign**
+
+---
+
+### 1.3 MinIO Object Storage Setup
+
+**Tasks**
+
+* Deploy MinIO
+* Configure buckets:
+
+  * documents
+  * digital_products
+  * reports
+* Define file naming conventions
+
+**Deliverables**
+
+* Accessible object storage
+* Access credentials
+
+**Exit Criteria**
+
+* Files can be stored and retrieved securely
+
+---
+
+## PHASE 2 — ORDER MANAGEMENT & FSM
+
+### 2.1 Order Service (Core)
+
+**Tasks**
+
+* Create order lifecycle model
+* Implement FSM rules and transitions
+* Implement transition validation
+* Log every state change
+
+**Deliverables**
+
+* Order creation endpoint
+* FSM enforcement layer
+
+**Exit Criteria**
+
+* No invalid state transitions possible
+
+---
+
+### 2.2 Customer Order Flow
+
+**Tasks**
+
+* Create customer order endpoint
+* Generate order numbers
+* Support web & WhatsApp initiation
+* Allow payment confirmation attachment
+
+**Deliverables**
+
+* Order creation working end-to-end
+
+**Exit Criteria**
+
+* Orders flow cleanly into FSM
+
+---
+
+### 2.3 Owner FSM Command Control
+
+**Tasks**
+
+* Command: change order state
+* Phone number authorization
+* Validate allowed transitions
+* Return confirmation message
+
+**Deliverables**
+
+* WhatsApp-controlled FSM management
+
+**Exit Criteria**
+
+* Owner fully controls order lifecycle
+
+---
+
+## PHASE 3 — PRODUCT & INVENTORY MANAGEMENT
+
+### 3.1 Product Service
+
+**Tasks**
+
+* Product creation endpoint
+* Product types:
+
+  * Stockable
+  * Digital
+  * Service
+* Pricing support (cost vs selling price)
+
+**Deliverables**
+
+* Product catalog API
+
+**Exit Criteria**
+
+* Products are cleanly categorized
+
+---
+
+### 3.2 Inventory Management
+
+**Tasks**
+
+* Inventory ledger model
+* Stock increase via purchases
+* Stock decrease via sales
+* Inventory adjustments with super-user confirmation
+
+**Deliverables**
+
+* Inventory history tracking
+
+**Exit Criteria**
+
+* Stock never goes negative accidentally
+
+---
+
+### 3.3 Digital Product Delivery
+
+**Tasks**
+
+* Secure file upload
+* Payment confirmation check
+* Time-limited download link generation
+
+**Deliverables**
+
+* Controlled digital delivery flow
+
+**Exit Criteria**
+
+* Files only accessible after payment
+
+---
+
+## PHASE 4 — SERVICE PRODUCTS & BOOKINGS
+
+### 4.1 Service Product Definition
+
+**Tasks**
+
+* Define service duration
+* Define booking rules
+* Define payment requirements
+
+**Deliverables**
+
+* Service product schema
+
+**Exit Criteria**
+
+* Services behave differently from goods
+
+---
+
+### 4.2 Booking Workflow
+
+**Tasks**
+
+* Tentative booking creation
+* AI slot suggestion
+* Owner confirmation flow
+* Google Calendar integration
+
+**Deliverables**
+
+* Confirmed calendar events
+
+**Exit Criteria**
+
+* No unapproved bookings hit calendar
+
+---
+
+## PHASE 5 — ACCOUNTING ENGINE
+
+### 5.1 Chart of Accounts
+
+**Tasks**
+
+* COA creation endpoints
+* Income, expense, asset, liability accounts
+* Default chart generation
+
+**Deliverables**
+
+* Configurable accounting backbone
+
+**Exit Criteria**
+
+* Every transaction maps to accounts
+
+---
+
+### 5.2 Transaction Recording
+
+**Tasks**
+
+* Sales → income accounts
+* Expenses via WhatsApp commands
+* Transfers between accounts
+* AI-assisted categorization
+
+**Deliverables**
+
+* Journal entry system
+
+**Exit Criteria**
+
+* Double-entry consistency maintained
+
+---
+
+### 5.3 Financial Statements
+
+**Tasks**
+
+* P&L
+* Balance Sheet
+* Cashflow
+* Bank statements
+
+**Deliverables**
+
+* Accurate financial outputs
+
+**Exit Criteria**
+
+* Numbers reconcile across reports
+
+---
+
+## PHASE 6 — DOCUMENT GENERATION SYSTEM
+
+### 6.1 HTML Template Engine
+
+**Tasks**
+
+* Define HTML template standards
+* Template variables
+* Version control for templates
+
+**Deliverables**
+
+* Reusable document templates
+
+**Exit Criteria**
+
+* No logic inside templates
+
+---
+
+### 6.2 PDF Generation & Security
+
+**Tasks**
+
+* Convert HTML → PDF
+* Apply password protection
+* Store in MinIO
+* Generate secure links
+
+**Deliverables**
+
+* Secure PDF pipeline
+
+**Exit Criteria**
+
+* Documents cannot be tampered with
+
+---
+
+## PHASE 7 — REPORTING & ANALYTICS
+
+### 7.1 Operational Reports
+
+**Tasks**
+
+* Orders summary
+* Fast-moving products
+* Inventory levels
+
+**Deliverables**
+
+* Business intelligence endpoints
+
+**Exit Criteria**
+
+* Reports generated in < few seconds
+
+---
+
+### 7.2 Financial Reports
+
+**Tasks**
+
+* Daily sales
+* Expense breakdown
+* Profitability
+
+**Deliverables**
+
+* Automated owner insights
+
+**Exit Criteria**
+
+* Reports match accounting ledger
+
+---
+
+## PHASE 8 — AI & WHATSAPP ORCHESTRATION
+
+### 8.1 LLM Intent Parsing
+
+**Tasks**
+
+* Define command schemas
+* Intent classification
+* Entity extraction
+* Confidence validation
+
+**Deliverables**
+
+* Reliable command interpretation
+
+**Exit Criteria**
+
+* <5% misrouted commands
+
+---
+
+### 8.2 Multi-Agent Routing
+
+**Tasks**
+
+* Order agent
+* Inventory agent
+* Accounting agent
+* Reporting agent
+* Booking agent
+
+**Deliverables**
+
+* Deterministic agent execution
+
+**Exit Criteria**
+
+* No agent overlaps responsibilities
+
+---
+
+### 8.3 n8n Automation
+
+**Tasks**
+
+* Webhook ingestion
+* WhatsApp routing
+* Error handling flows
+* Retry mechanisms
+
+**Deliverables**
+
+* Stable orchestration workflows
+
+**Exit Criteria**
+
+* No lost messages
+
+---
+
+## PHASE 9 — CUSTOMER FEEDBACK SYSTEM
+
+### 9.1 Survey Flow
+
+**Tasks**
+
+* Post-order trigger
+* WhatsApp / web survey
+* Rating storage
+
+**Deliverables**
+
+* Feedback collection system
+
+**Exit Criteria**
+
+* Feedback tied to orders
+
+---
+
+### 9.2 Satisfaction Reporting
+
+**Tasks**
+
+* Average ratings
+* Trends
+* PDF reports
+
+**Deliverables**
+
+* Service quality insights
+
+**Exit Criteria**
+
+* Owner can measure performance
+
+---
+
+## PHASE 10 — FRONTEND & POLISH
+
+### 10.1 Minimal HTML Shop
+
+**Tasks**
+
+* Product listing
+* Checkout initiation
+* Order status check
+* WhatsApp redirect
+
+**Deliverables**
+
+* Customer-facing storefront
+
+**Exit Criteria**
+
+* Works without JS frameworks
+
+---
+
+### 10.2 End-to-End Testing
+
+**Tasks**
+
+* Customer → Order → Payment → Delivery
+* Owner → Commands → Reports
+* Failure scenarios
+
+**Deliverables**
+
+* Test scenarios & logs
+
+**Exit Criteria**
+
+* System survives real usage
+
+---
+Perfect — this guide is solid, and yes, **we can and should strictly enforce it across the entire project**. Below is a **clear, system-level confirmation and integration plan** showing **how your Docker Optimization Guide becomes a non-negotiable standard** for the whole architecture.
+
+No code, only **how it is applied**, **where**, and **what rules are enforced**.
+
+---
+
+# HOW YOUR DOCKER OPTIMIZATION GUIDE IS APPLIED TO THIS PROJECT
+
+This section explains **exactly how every service, container, and workflow will comply** with your guide.
+
+---
+
+## 1. GLOBAL DOCKER STANDARDS (APPLIES TO ALL SERVICES)
+
+These rules apply to **every container without exception**.
+
+### 1.1 Multi-Stage Builds (MANDATORY)
+
+**How it’s applied**
+
+* Every FastAPI service uses:
+
+  * **Build stage** → install dependencies, compile assets
+  * **Runtime stage** → only runtime files copied
+* No compilers, package managers, or build tools exist in runtime images
+
+**Enforcement**
+
+* CI fails if a Dockerfile has only one stage
+* Image size thresholds enforced
+
+---
+
+### 1.2 Minimal Base Images (MANDATORY)
+
+**Policy**
+
+* Python services → `python:X.Y-slim`
+* Node services (n8n, tooling) → `node:X-slim`
+* No `latest` tags allowed
+
+**Exception rule**
+
+* Alpine only if all dependencies are musl-compatible
+
+---
+
+### 1.3 Non-Root Execution (MANDATORY)
+
+**How**
+
+* Each container:
+
+  * Creates a dedicated user (`PUID`, `PGID`)
+  * Drops root privileges before runtime
+* Root allowed only during build stage
+
+**Why**
+
+* WhatsApp commands, file uploads, PDFs → high-risk vectors
+
+---
+
+### 1.4 File Permissions & Volumes
+
+**Standardized paths**
+
+* `/app` → application code
+* `/app/data` → runtime writable
+* `/app/logs`
+* `/app/uploaded_docs`
+
+**Rules**
+
+* Read-only filesystem by default
+* Writable paths explicitly mounted
+* Permissions enforced at startup via entrypoint
+
+---
+
+## 2. SERVICE-BY-SERVICE DOCKER COMPLIANCE
+
+### 2.1 Core FastAPI Services
+
+*(orders, products, inventory, accounting, documents, reporting)*
+
+**Docker profile**
+
+* Multi-stage
+* Slim Python base
+* Non-root
+* Healthcheck enabled
+* Logs rotated
+* CPU & memory limits defined
+
+**Optimization focus**
+
+* Fast startup
+* Low memory footprint
+* Stateless by design
+
+---
+
+### 2.2 Document & PDF Service
+
+**Special considerations**
+
+* Headless PDF engine isolated
+* Temp files written to `tmpfs`
+* Final PDFs stored only in MinIO
+
+**Security**
+
+* No persistent filesystem access
+* Password protection enforced before storage
+
+---
+
+### 2.3 MinIO
+
+**Configuration**
+
+* Persistent volumes
+* Separate access keys per service
+* No public buckets
+
+**Optimization**
+
+* Resource limits
+* Health checks
+* Backup-friendly volume layout
+
+---
+
+### 2.4 Database (Postgres / MySQL)
+
+**Rules**
+
+* Runs in its own container
+* Dedicated volume
+* Init scripts only on first boot
+
+**Hardening**
+
+* No exposed ports in production
+* Internal Docker network only
+
+---
+
+### 2.5 Qdrant (Vector DB)
+
+**Optimization**
+
+* Persistent volume
+* Snapshot support
+* Memory limits enforced
+
+**Security**
+
+* No public access
+* Access only via backend services
+
+---
+
+### 2.6 Ollama (LLM Runtime)
+
+**Profile**
+
+* Optional GPU support
+* Model cache mounted as volume
+* CPU/memory capped
+
+**Optimization**
+
+* Separate container prevents AI memory spikes from killing core services
+
+---
+
+### 2.7 n8n
+
+**Hardening**
+
+* Persistent workflow volume
+* Log rotation
+* Webhooks only exposed through reverse proxy
+
+**Performance**
+
+* Resource limits
+* Restart policies
+
+---
+
+### 2.8 Evolution API (WhatsApp)
+
+**Security**
+
+* Token via env vars
+* Rate limiting at gateway
+* Health monitoring
+
+---
+
+## 3. DOCKER COMPOSE ENFORCEMENT RULES
+
+### 3.1 Mandatory Compose Features
+
+Every service includes:
+
+* `healthcheck`
+* `restart: unless-stopped`
+* `logging` with rotation
+* `deploy.resources.limits`
+* Named volumes (no anonymous volumes)
+
+---
+
+### 3.2 Networking
+
+**Rules**
+
+* Single internal Docker network
+* No service uses `localhost`
+* Public exposure only via gateway / frontend
+
+---
+
+### 3.3 Volume Strategy
+
+| Component | Volume Type  | Purpose         |
+| --------- | ------------ | --------------- |
+| DB        | Named volume | Persistent data |
+| MinIO     | Named volume | Documents, PDFs |
+| Qdrant    | Named volume | Embeddings      |
+| Ollama    | Named volume | Models          |
+| Logs      | Bind mount   | Debugging       |
+
+---
+
+## 4. SECURITY HARDENING (STRICT)
+
+### 4.1 Container-Level
+
+* No root user at runtime
+* Read-only filesystem
+* No shell access in production images
+* Package caches removed in same layer
+
+---
+
+### 4.2 Secrets
+
+* No secrets in images
+* Env-based injection
+* CI prevents accidental commits
+
+---
+
+### 4.3 WhatsApp Command Abuse Prevention
+
+* Phone number allowlist
+* Super-user password for inventory & accounting overrides
+* Audit logs immutable
+
+
+
+
+
+
+

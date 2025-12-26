@@ -1,0 +1,19 @@
+📦 *Order Update* 📦
+
+Hello {{ customer_name }},
+
+The status of your order #{{ order_id }} has been updated to: *{{ status | title }}*
+
+{% if status == 'shipped' %}
+Your order is on its way! 🚚
+Tracking Number: {{ tracking_number }}
+Courier: {{ courier_name }}
+Track your package: {{ tracking_url }}
+{% elif status == 'delivered' %}
+Your order has been delivered! 🎉
+Delivery Date: {{ delivery_date }}
+{% endif %}
+
+If you have any questions, reply to this message or call us at {{ support_phone }}.
+
+View your order: {{ order_status_url }}

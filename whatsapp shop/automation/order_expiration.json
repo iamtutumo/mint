@@ -1,0 +1,120 @@
+{
+  "name": "Order Expiration Job",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every Hour",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT o.*, c.whatsapp_number, c.name as customer_name\nFROM orders o\nJOIN customers c ON o.customer_id = c.id\nWHERE o.status IN ('pending', 'awaiting_payment')\n  AND o.expires_at < NOW()\n  AND o.expires_at > NOW() - INTERVAL '1 hour';",
+        "options": {}
+      },
+      "id": "get-expired-orders",
+      "name": "Get Expired Orders",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.length }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "check-has-expired",
+      "name": "Has Expired Orders?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE orders\nSET status = 'expired',\n    updated_at = NOW()\nWHERE id = {{ $json.id }}\nRETURNING *;",
+        "options": {}
+      },
+      "id": "mark-expired",
+      "name": "Mark Order as Expired",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare expiration notification\nconst order = $json;\n\nconst notification = `\n⏰ ORDER EXPIRED\n━━━━━━━━━━━━━━━━━━━━\n\nYour order has expired:\n\nOrder #: ${order.order_number}\nTotal: $${order.total_amount}\n\nThis order was valid for 24 hours and has now been cancelled.\n\nIf you still want to purchase these items, please start a new order by saying \"I want to order\" or browse our products.\n\nThank you! 🙏\n`;\n\nreturn {\n  ...order,\n  notification: notification\n};"
+      },
+      "id": "prepare-notification",
+      "name": "Prepare Expiration Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://evolution-api:8080/message/sendText",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"number\": \"{{ $json.whatsapp_number }}\",\n  \"text\": \"{{ $json.notification }}\"\n}",
+        "options": {}
+      },
+      "id": "notify-customer",
+      "name": "Notify Customer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO conversation_context (customer_id, session_id, intent, current_state, context_data)\nVALUES (\n  (SELECT id FROM customers WHERE whatsapp_number = '{{ $json.whatsapp_number }}'),\n  'order_expired_{{ $json.order_number }}',\n  'order_expired',\n  'greeting',\n  '{\"last_expired_order\": \"{{ $json.order_number }}\"}'::jsonb\n)\nON CONFLICT (customer_id) DO UPDATE\nSET context_data = jsonb_set(\n  conversation_context.context_data,\n  '{last_expired_order}',\n  '\"{{ $json.order_number }}\"'::jsonb\n);",
+        "options": {}
+      },
+      "id": "update-context",
+      "name": "Update Customer Context",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1450, 300]
+    }
+  ],
+  "connections": {
+    "Every Hour": {
+      "main": [[{ "node": "Get Expired Orders", "type": "main", "index": 0 }]]
+    },
+    "Get Expired Orders": {
+      "main": [[{ "node": "Has Expired Orders?", "type": "main", "index": 0 }]]
+    },
+    "Has Expired Orders?": {
+      "main": [[{ "node": "Mark Order as Expired", "type": "main", "index": 0 }]]
+    },
+    "Mark Order as Expired": {
+      "main": [[{ "node": "Prepare Expiration Message", "type": "main", "index": 0 }]]
+    },
+    "Prepare Expiration Message": {
+      "main": [[{ "node": "Notify Customer", "type": "main", "index": 0 }]]
+    },
+    "Notify Customer": {
+      "main": [[{ "node": "Update Customer Context", "type": "main", "index": 0 }]]
+    }
+  }
+}

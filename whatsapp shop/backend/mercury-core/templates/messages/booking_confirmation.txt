@@ -1,0 +1,27 @@
+📅 *Booking Confirmation* 📅
+
+Hello {{ customer_name }},
+
+Your booking has been confirmed! Here are the details:
+
+*Service:* {{ service_name }}
+*Date:* {{ booking_date }}
+*Time:* {{ booking_time }}
+*Duration:* {{ duration }} minutes
+*Location/Address:*
+{{ location }}
+
+*Booking Reference:* {{ booking_reference }}
+
+*Special Instructions:*
+{{ special_instructions or 'None provided' }}
+
+You'll receive a reminder {{ reminder_hours }} hours before your appointment. To reschedule or cancel, please reply to this message at least {{ cancellation_hours }} hours in advance.
+
+Add to calendar: {{ calendar_link }}
+
+We look forward to seeing you!
+
+Best regards,
+{{ business_name }}
+{{ support_phone }}

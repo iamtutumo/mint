@@ -1,0 +1,121 @@
+{
+  "name": "Order Creation Tool",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "tool-create-order",
+        "options": {}
+      },
+      "id": "tool-webhook",
+      "name": "Tool Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse order input from agent\nlet orderData;\ntry {\n  orderData = typeof $json.input === 'string' \n    ? JSON.parse($json.input) \n    : $json.input;\n} catch (e) {\n  orderData = $json;\n}\n\nreturn {\n  customerId: orderData.customer_id || $json.customerId,\n  products: orderData.products || [],\n  customerNumber: orderData.customer_number || $json.customerNumber\n};"
+      },
+      "id": "parse-order-input",
+      "name": "Parse Order Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM products WHERE id = ANY(ARRAY[{{ $json.products.map(p => p.id || p.product_id).join(',') }}]);",
+        "options": {}
+      },
+      "id": "get-products",
+      "name": "Get Product Details",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [650, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate order total and prepare order data\nconst products = $input.first().json;\nconst orderInput = $input.last().json;\n\nlet totalAmount = 0;\nconst orderProducts = [];\n\norderInput.products.forEach(orderProd => {\n  const product = products.find(p => p.id === (orderProd.id || orderProd.product_id));\n  \n  if (product) {\n    const quantity = orderProd.quantity || 1;\n    const itemTotal = parseFloat(product.price) * quantity;\n    totalAmount += itemTotal;\n    \n    orderProducts.push({\n      product_id: product.id,\n      name: product.name,\n      price: product.price,\n      quantity: quantity,\n      subtotal: itemTotal,\n      type: product.product_type\n    });\n  }\n});\n\n// Generate unique order number\nconst orderNumber = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;\n\n// Set expiration to 24 hours from now\nconst expiresAt = new Date();\nexpiresAt.setHours(expiresAt.getHours() + 24);\n\nreturn {\n  orderNumber: orderNumber,\n  customerId: orderInput.customerId,\n  customerNumber: orderInput.customerNumber,\n  totalAmount: totalAmount.toFixed(2),\n  products: orderProducts,\n  expiresAt: expiresAt.toISOString(),\n  status: 'pending'\n};"
+      },
+      "id": "calculate-order",
+      "name": "Calculate Order",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO orders (order_number, customer_id, total_amount, status, products, expires_at)\nVALUES (\n  '{{ $json.orderNumber }}',\n  {{ $json.customerId }},\n  {{ $json.totalAmount }},\n  '{{ $json.status }}',\n  '{{ JSON.stringify($json.products) }}'::jsonb,\n  '{{ $json.expiresAt }}'\n)\nRETURNING *;",
+        "options": {}
+      },
+      "id": "create-order",
+      "name": "Create Order in DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1050, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate invoice details\nconst order = $json;\n\n// Payment instructions\nconst paymentMethods = [\n  {\n    method: 'Bank Transfer',\n    details: 'Account: 1234567890\\nBank: Example Bank\\nAccount Name: Shop Name'\n  },\n  {\n    method: 'Mobile Money',\n    details: 'Number: +1234567890\\nName: Shop Name'\n  }\n];\n\n// Format invoice\nconst invoice = `\n━━━━━━━━━━━━━━━━━━━━\n📋 INVOICE\n━━━━━━━━━━━━━━━━━━━━\n\nOrder #: ${order.order_number}\nDate: ${new Date().toLocaleString()}\n\n━━━━━━━━━━━━━━━━━━━━\nITEMS:\n━━━━━━━━━━━━━━━━━━━━\n\n${order.products.map(p => \n  `${p.name}\\n  Qty: ${p.quantity} × $${p.price} = $${p.subtotal.toFixed(2)}`\n).join('\\n\\n')}\n\n━━━━━━━━━━━━━━━━━━━━\nTOTAL: $${order.total_amount}\n━━━━━━━━━━━━━━━━━━━━\n\n💳 PAYMENT OPTIONS:\n\n${paymentMethods.map((pm, i) => \n  `${i + 1}. ${pm.method}\\n${pm.details}`\n).join('\\n\\n')}\n\n⏰ This order expires in 24 hours\nExpires: ${new Date(order.expires_at).toLocaleString()}\n\n📝 After payment, reply with:\n\"PAID [order_number] [payment_reference]\"\n\nExample: PAID ${order.order_number} TXN123456\n`;\n\nreturn {\n  ...order,\n  invoice: invoice\n};"
+      },
+      "id": "generate-invoice",
+      "name": "Generate Invoice",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://evolution-api:8080/message/sendText",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"number\": \"{{ $json.customerNumber }}\",\n  \"text\": \"{{ $json.invoice }}\"\n}",
+        "options": {}
+      },
+      "id": "send-invoice",
+      "name": "Send Invoice via WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1450, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"order_number\": \"{{ $json.order_number }}\",\n  \"total_amount\": \"{{ $json.total_amount }}\",\n  \"expires_at\": \"{{ $json.expires_at }}\",\n  \"message\": \"Order created successfully. Invoice sent to customer.\"\n}",
+        "options": {}
+      },
+      "id": "respond",
+      "name": "Respond to Agent",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1650, 400]
+    }
+  ],
+  "connections": {
+    "Tool Webhook": {
+      "main": [[{ "node": "Parse Order Input", "type": "main", "index": 0 }]]
+    },
+    "Parse Order Input": {
+      "main": [[{ "node": "Get Product Details", "type": "main", "index": 0 }]]
+    },
+    "Get Product Details": {
+      "main": [[{ "node": "Calculate Order", "type": "main", "index": 0 }]]
+    },
+    "Calculate Order": {
+      "main": [[{ "node": "Create Order in DB", "type": "main", "index": 0 }]]
+    },
+    "Create Order in DB": {
+      "main": [[{ "node": "Generate Invoice", "type": "main", "index": 0 }]]
+    },
+    "Generate Invoice": {
+      "main": [[{ "node": "Send Invoice via WhatsApp", "type": "main", "index": 0 }]]
+    },
+    "Send Invoice via WhatsApp": {
+      "main": [[{ "node": "Respond to Agent", "type": "main", "index": 0 }]]
+    }
+  }
+}

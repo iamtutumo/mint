@@ -1,0 +1,180 @@
+{
+  "name": "Customer Surveys Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "event": "order.completed"
+      },
+      "name": "Order Completed Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "options": {
+          "delayInMinutes": 1440
+        }
+      },
+      "name": "Wait 24 Hours",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "to": "={{ $node[\"Order Completed Webhook\"].json.customerPhone }}",
+        "text": "=🌟 How was your experience? 🌟\n\nWe'd love your feedback on your recent order #{{ $node[\"Order Completed Webhook\"].json.orderNumber }}. Please rate us from 1-5 stars by replying with a number.\n\n5 ⭐⭐⭐⭐⭐ - Excellent!\n4 ⭐⭐⭐⭐ - Very Good\n3 ⭐⭐⭐ - Good\n2 ⭐⭐ - Fair\n1 ⭐ - Poor\n\nThank you for your feedback!"
+      },
+      "name": "Send Survey Request",
+      "type": "n8n-nodes-whatsapp.sendMessage",
+      "typeVersion": 1,
+      "position": [700, 300],
+      "credentials": {
+        "whatsAppApi": "whatsapp-credentials"
+      }
+    },
+    {
+      "parameters": {
+        "event": "={\n  \"event\": \"message.upsert\",\n  \"conditions\": {\n    \"fromMe\": false,\n    \"remoteJid\": "{{ $node[\"Order Completed Webhook\"].json.customerPhone }}"\n  }\n}"
+      },
+      "name": "Wait for Response",
+      "type": "n8n-nodes-whatsapp.whatsAppTrigger",
+      "typeVersion": 1,
+      "position": [950, 300],
+      "credentials": {
+        "whatsAppApi": "whatsapp-credentials"
+      }
+    },
+    {
+      "parameters": {
+        "operation": "storeSurveyResponse",
+        "bodyParametersJson": "{\n          \"orderId\": \"{{ $node[\"Order Completed Webhook\"].json.orderId }}\n          \"customerId\": \"{{ $node[\"Order Completed Webhook\"].json.customerId }}\n          \"rating\": {{ $node[\"Wait for Response\"].json.body.eventData.message.conversation }}\n          \"timestamp\": \"{{ $node[\"Wait for Response\"].json.body.eventData.messageTimestamp }}\"\n        }",
+        "options": {}
+      },
+      "name": "Store Response",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [1200, 300],
+      "credentials": {
+        "httpBasicAuth": "api-credentials"
+      }
+    },
+    {
+      "parameters": {
+        "to": "={{ $node[\"Order Completed Webhook\"].json.customerPhone }}",
+        "text": "=Thank you for your feedback! We appreciate you taking the time to rate your experience. Your input helps us improve our service. 🙏"
+      },
+      "name": "Send Thank You",
+      "type": "n8n-nodes-whatsapp.sendMessage",
+      "typeVersion": 1,
+      "position": [1450, 300],
+      "credentials": {
+        "whatsAppApi": "whatsapp-credentials"
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ parseInt($node[\"Wait for Response\"].json.body.eventData.message.conversation) }}",
+              "operation": "smaller",
+              "value2": 3
+            }
+          ]
+        }
+      },
+      "name": "Is Low Rating?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1200, 450]
+    },
+    {
+      "parameters": {
+        "to": "+1234567890",
+        "text": "=⚠️ Low Rating Alert!\n\nOrder #{{ $node[\"Order Completed Webhook\"].json.orderNumber }} received a {{ $node[\"Wait for Response\"].json.body.eventData.message.conversation }}-star rating.\n\nCustomer: {{ $node[\"Order Completed Webhook\"].json.customerName }}\n\nPlease follow up to address their concerns."
+      },
+      "name": "Notify Team",
+      "type": "n8n-nodes-whatsapp.sendMessage",
+      "typeVersion": 1,
+      "position": [1450, 450],
+      "credentials": {
+        "whatsAppApi": "whatsapp-credentials"
+      }
+    }
+  ],
+  "connections": {
+    "Order Completed Webhook": {
+      "main": [
+        [
+          {
+            "node": "Wait 24 Hours",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 24 Hours": {
+      "main": [
+        [
+          {
+            "node": "Send Survey Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Survey Request": {
+      "main": [
+        [
+          {
+            "node": "Wait for Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for Response": {
+      "main": [
+        [
+          {
+            "node": "Store Response",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Thank You",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Is Low Rating?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Low Rating?": {
+      "main": [
+        [
+          {
+            "node": "Notify Team",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1.0.0"
+}

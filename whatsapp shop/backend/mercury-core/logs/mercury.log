@@ -257,3 +257,34 @@ WHERE accounts.code = %(code_1)s
 [parameters: {'code_1': '1000', 'param_1': 1}]
 (Background on this error at: https://sqlalche.me/e/20/f405). Attempting to create tables and insert defaults.
 2025-12-26 21:29:30,762 - mercury - ERROR - Database initialization failed: 'type' is an invalid keyword argument for Account
+2025-12-26 21:29:36,555 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:29:36,568 - mercury - INFO - Database tables created successfully
+2025-12-26 21:29:36,578 - mercury - WARNING - Could not query accounts table during defaults init: 'type' is an invalid keyword argument for Account. Attempting to create tables and insert defaults.
+2025-12-26 21:29:36,591 - mercury - ERROR - Database initialization failed: 'type' is an invalid keyword argument for Account
+2025-12-26 21:29:38,581 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:29:38,591 - mercury - INFO - Database tables created successfully
+2025-12-26 21:29:38,602 - mercury - WARNING - Could not query accounts table during defaults init: 'type' is an invalid keyword argument for Account. Attempting to create tables and insert defaults.
+2025-12-26 21:29:38,616 - mercury - ERROR - Database initialization failed: 'type' is an invalid keyword argument for Account
+2025-12-26 21:29:40,341 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:29:40,353 - mercury - INFO - Database tables created successfully
+2025-12-26 21:29:40,363 - mercury - WARNING - Could not query accounts table during defaults init: 'type' is an invalid keyword argument for Account. Attempting to create tables and insert defaults.
+2025-12-26 21:29:40,377 - mercury - ERROR - Database initialization failed: 'type' is an invalid keyword argument for Account
+2025-12-26 21:29:42,329 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:29:42,341 - mercury - INFO - Database tables created successfully
+2025-12-26 21:29:42,358 - mercury - WARNING - Could not query accounts table during defaults init: 'type' is an invalid keyword argument for Account. Attempting to create tables and insert defaults.
+2025-12-26 21:29:42,381 - mercury - ERROR - Database initialization failed: 'type' is an invalid keyword argument for Account
+2025-12-26 21:29:44,844 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:29:44,860 - mercury - INFO - Database tables created successfully
+2025-12-26 21:29:44,877 - mercury - WARNING - Could not query accounts table during defaults init: 'type' is an invalid keyword argument for Account. Attempting to create tables and insert defaults.
+2025-12-26 21:29:44,898 - mercury - ERROR - Database initialization failed: 'type' is an invalid keyword argument for Account
+2025-12-26 21:29:48,126 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:29:48,137 - mercury - INFO - Database tables created successfully
+2025-12-26 21:29:48,150 - mercury - WARNING - Could not query accounts table during defaults init: 'type' is an invalid keyword argument for Account. Attempting to create tables and insert defaults.
+2025-12-26 21:29:48,166 - mercury - ERROR - Database initialization failed: 'type' is an invalid keyword argument for Account
+2025-12-26 21:29:52,780 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:29:52,791 - mercury - INFO - Database tables created successfully
+2025-12-26 21:29:52,827 - mercury - INFO - Default accounts created
+2025-12-26 21:30:07,722 - mercury - INFO - Shutting down Mercury Commerce Platform
+2025-12-26 21:30:09,403 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:30:09,413 - mercury - INFO - Database tables created successfully
+2025-12-26 21:30:09,428 - mercury - INFO - Default accounts created

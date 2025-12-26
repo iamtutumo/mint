@@ -3,7 +3,8 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 
-from ..models.order import Order, OrderStatus, OrderItem
+from ..models.order import Order, OrderStatus
+from ..models.order_item import OrderItem
 from ..models.product import Product, ProductType
 from ..models.inventory import InventoryTransaction, TransactionType
 from ..schemas.order import OrderCreate, OrderUpdate, OrderStatusUpdate

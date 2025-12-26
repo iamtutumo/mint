@@ -7,6 +7,20 @@ logger = setup_logging()
 
 async def init_db() -> None:
     try:
+        # Import all models so SQLAlchemy mappers are registered before metadata operations
+        import app.models.user
+        import app.models.account
+        import app.models.product
+        import app.models.booking
+        import app.models.order
+        import app.models.order_item
+        import app.models.payment
+        import app.models.inventory
+        import app.models.transaction
+        import app.models.document
+        import app.models.survey
+        import app.models.state_transition
+
         Base.metadata.create_all(bind=engine)
         logger.info("Database tables created successfully")
         
@@ -17,7 +31,7 @@ async def init_db() -> None:
             await create_default_products(db)
         finally:
             db.close()
-            
+
     except Exception as e:
         logger.error(f"Database initialization failed: {e}")
         raise

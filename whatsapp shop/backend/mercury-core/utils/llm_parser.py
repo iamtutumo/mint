@@ -178,7 +178,7 @@ class LLMParser:
 llm_parser = LLMParser()
 
 def parse_command(text: str) -> Command:
-    ""
+    """
     Parse natural language text and return a Command object.
     
     This is a convenience function that uses the default LLMParser instance.
@@ -190,3 +190,17 @@ def parse_command(text: str) -> Command:
         A Command object representing the parsed command
     """
     return llm_parser.parse(text)
+
+
+# Backwards-compatible wrapper used by other modules
+class LLMCommandParser:
+    @staticmethod
+    async def parse_command(text: str, phone_number: Optional[str] = None) -> Command:
+        """Async wrapper around the synchronous `parse_command` helper."""
+        # phone_number isn't used in this simple parser but kept for API compatibility
+        return llm_parser.parse(text)
+
+    @staticmethod
+    async def validate_command(cmd: Command) -> bool:
+        """Return True when the command looks valid (not UNKNOWN)."""
+        return cmd.command_type != CommandType.UNKNOWN

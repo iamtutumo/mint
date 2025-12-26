@@ -53,7 +53,7 @@ class Order(BaseModel):
     
     # Metadata
     notes = Column(Text)
-    metadata = Column(JSON, default=dict)
+    metadata_json = Column(JSON, default=dict)
     
     # Relationships
     customer = relationship("User", back_populates="orders")

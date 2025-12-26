@@ -21,9 +21,15 @@ class CalendarService:
     """Service for managing calendar events via n8n webhooks"""
     
     def __init__(self):
-        self.n8n_webhook_url = settings.N8N_WEBHOOK_URL
-        self.api_key = settings.N8N_API_KEY
+        # Use getattr to avoid raising during import if settings are missing
+        self.n8n_webhook_url = getattr(settings, "N8N_WEBHOOK_URL", None)
+        self.api_key = getattr(settings, "N8N_API_KEY", None)
         self.timeout = 30  # seconds
+        self.dry_run = not (self.n8n_webhook_url and self.api_key)
+        if self.dry_run:
+            # local/dev environment - don't fail import if n8n is not configured
+            import logging
+            logging.getLogger("mercury").warning("N8N not configured; CalendarService running in dry-run mode")
 
     async def _call_n8n_webhook(
         self, 
@@ -31,15 +37,19 @@ class CalendarService:
         payload: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Make a request to the n8n webhook
-        
-        Args:
-            action: The calendar action to perform (create, update, delete, list)
-            payload: The payload for the action
-            
-        Returns:
-            Dict containing the response from n8n
+        Make a request to the n8n webhook. If n8n is not configured, return
+        simulated responses (dry-run) so that the app can function in dev.
         """
+        if self.dry_run:
+            # Simulate plausible responses for common actions
+            if action == "create_event":
+                return {"success": True, "id": f"dry-{int(datetime.utcnow().timestamp())}"}
+            if action in ("delete_event", "update_event"):
+                return {"success": True}
+            if action == "get_available_slots":
+                return {"available_slots": []}
+            return {"success": True}
+
         headers = {
             "Content-Type": "application/json",
             "X-N8N-API-KEY": self.api_key
@@ -126,141 +136,7 @@ class CalendarService:
         response = await self._call_n8n_webhook("get_available_slots", payload)
         return response.get("available_slots", [])
 
-    async def create_event(self, event: CalendarEvent) -> Dict[str, Any]:
-        """Create a new calendar event"""
-        event_body = {
-            'summary': event.summary,
-            'description': event.description,
-            'start': {
-                'dateTime': event.start_time.isoformat(),
-                'timeZone': event.timezone,
-            },
-            'end': {
-                'dateTime': event.end_time.isoformat(),
-                'timeZone': event.timezone,
-            },
-            'attendees': event.attendees,
-            'reminders': {
-                'useDefault': True,
-            },
-        }
-        
-        if event.location:
-            event_body['location'] = event.location
-        
-        try:
-            event_result = self.service.events().insert(
-                calendarId='primary',
-                body=event_body,
-                sendUpdates='all'
-            ).execute()
-            return event_result
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to create calendar event: {str(e)}"
-            )
-
-    async def get_available_slots(
-        self, 
-        calendar_id: str = 'primary',
-        time_min: Optional[datetime] = None,
-        time_max: Optional[datetime] = None,
-        time_zone: str = 'UTC',
-        slot_duration_minutes: int = 60
-    ) -> List[Dict[str, datetime]]:
-        """Get available time slots for booking"""
-        if not time_min:
-            time_min = datetime.utcnow()
-        if not time_max:
-            time_max = time_min + timedelta(days=30)
-            
-        try:
-            # Get busy time slots
-            freebusy_result = self.service.freebusy().query(
-                body={
-                    "timeMin": time_min.isoformat() + 'Z',
-                    "timeMax": time_max.isoformat() + 'Z',
-                    "timeZone": time_zone,
-                    "items": [{"id": calendar_id}]
-                }
-            ).execute()
-            
-            busy_slots = freebusy_result.get('calendars', {}).get(calendar_id, {}).get('busy', [])
-            
-            # Generate all possible slots
-            all_slots = []
-            current_time = time_min
-            slot_duration = timedelta(minutes=slot_duration_minutes)
-            
-            while current_time + slot_duration <= time_max:
-                slot_end = current_time + slot_duration
-                all_slots.append((current_time, slot_end))
-                current_time = slot_end
-            
-            # Filter out busy slots
-            available_slots = []
-            for slot_start, slot_end in all_slots:
-                slot_is_available = True
-                for busy in busy_slots:
-                    busy_start = datetime.fromisoformat(busy['start'].replace('Z', '+00:00'))
-                    busy_end = datetime.fromisoformat(busy['end'].replace('Z', '+00:00'))
-                    
-                    # Check for overlap
-                    if not (slot_end <= busy_start or slot_start >= busy_end):
-                        slot_is_available = False
-                        break
-                
-                if slot_is_available:
-                    available_slots.append({
-                        'start': slot_start,
-                        'end': slot_end
-                    })
-            
-            return available_slots
-            
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to fetch available slots: {str(e)}"
-            )
-
-    async def update_event(self, event_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
-        """Update an existing calendar event"""
-        try:
-            event = self.service.events().get(calendarId='primary', eventId=event_id).execute()
-            
-            # Apply updates
-            for key, value in updates.items():
-                if key in event:
-                    event[key] = value
-            
-            updated_event = self.service.events().update(
-                calendarId='primary',
-                eventId=event_id,
-                body=event,
-                sendUpdates='all'
-            ).execute()
-            
-            return updated_event
-            
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to update calendar event: {str(e)}"
-            )
-
     async def cancel_event(self, event_id: str) -> bool:
-        """Cancel/delete a calendar event"""
-        try:
-            self.service.events().delete(
-                calendarId='primary',
-                eventId=event_id,
-                sendUpdates='all'
-            ).execute()
-            return True
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to cancel calendar event: {str(e)}"
-            )
+        """Cancel/delete a calendar event via n8n (alias for delete_event)."""
+        result = await self.delete_event(event_id)
+        return bool(result)

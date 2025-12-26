@@ -20,7 +20,7 @@ class OrderItem(BaseModel):
     download_expires_at = Column(String(50))
     
     # Metadata
-    metadata = Column(JSON, default=dict)
+    metadata_json = Column(JSON, default=dict)
     
     # Relationships
     order = relationship("Order", back_populates="items")

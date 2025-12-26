@@ -3,14 +3,14 @@ from sqlalchemy.orm import relationship
 import enum
 import uuid
 
-from .base import Base, BaseModel
+from app.db.base import BaseModel
 
 class ProductType(str, enum.Enum):
     PHYSICAL = "physical"
     DIGITAL = "digital"
     SERVICE = "service"
 
-class Product(Base, BaseModel):
+class Product(BaseModel):
     __tablename__ = "products"
     
     name = Column(String(200), nullable=False, index=True)
@@ -49,15 +49,10 @@ class Product(Base, BaseModel):
     
     # General
     is_active = Column(Boolean, default=True)
-    metadata = Column(JSON, default=dict)
+    metadata_json = Column(JSON, default=dict)
     image_url = Column(String(500))
     
     # Relationships
     order_items = relationship("OrderItem", back_populates="product")
     inventory_movements = relationship("InventoryMovement", back_populates="product")
-    inventory_transactions = relationship("InventoryTransaction", back_populates="product")
     
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        if not self.id:
-            self.id = str(uuid.uuid4())

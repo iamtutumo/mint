@@ -3,7 +3,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
-from ...core.security import get_current_user
+from ...core.auth import get_current_user
 from ...services.calendar import CalendarService, CalendarEvent
 from ...models.booking import Booking, BookingStatus
 from ...models.user import User
@@ -16,10 +16,7 @@ import os
 CALENDAR_CREDENTIALS_PATH = os.getenv("GOOGLE_CALENDAR_CREDENTIALS_PATH", "google_credentials.json")
 CALENDAR_TOKEN_PATH = os.getenv("GOOGLE_CALENDAR_TOKEN_PATH", "token.json")
 
-calendar_service = CalendarService(
-    credentials_path=CALENDAR_CREDENTIALS_PATH,
-    token_path=CALENDAR_TOKEN_PATH
-)
+calendar_service = CalendarService()
 
 class BookingCreate(BaseModel):
     service_id: int

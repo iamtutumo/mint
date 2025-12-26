@@ -288,3 +288,7 @@ WHERE accounts.code = %(code_1)s
 2025-12-26 21:30:09,403 - mercury - INFO - Starting Mercury Commerce Platform
 2025-12-26 21:30:09,413 - mercury - INFO - Database tables created successfully
 2025-12-26 21:30:09,428 - mercury - INFO - Default accounts created
+2025-12-26 21:50:40,188 - mercury - INFO - Shutting down Mercury Commerce Platform
+2025-12-26 21:50:42,021 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:50:42,032 - mercury - INFO - Database tables created successfully
+2025-12-26 21:50:42,050 - mercury - INFO - Default accounts created

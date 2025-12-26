@@ -4,8 +4,8 @@ from contextlib import asynccontextmanager
 
 from app.core.config import settings
 from app.core.logging import setup_logging
-from app.db.init_db import init_db
-from app.api.v1.router import api_router
+from app.db.init import init_db
+from app.api.v1.router import router as api_router
 
 logger = setup_logging()
 

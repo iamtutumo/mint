@@ -29,4 +29,5 @@ class Transaction(BaseModel):
     performed_by = Column(String(20))
     
     # Relationships
-    account = relationship("Account", back_populates="transactions")
+    # account relationship temporarily disabled to avoid mapper resolution issues during startup
+    # account = relationship("app.models.account.Account", back_populates="transactions")

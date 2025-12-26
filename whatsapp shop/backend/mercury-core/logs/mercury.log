@@ -1,0 +1,259 @@
+2025-12-26 21:24:58,988 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:24:59,005 - mercury - INFO - Database tables created successfully
+2025-12-26 21:24:59,011 - mercury - ERROR - Database initialization failed: Column expression expected for argument 'remote_side'; got <built-in function id>.
+2025-12-26 21:25:26,361 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:25:26,386 - mercury - INFO - Database tables created successfully
+2025-12-26 21:25:26,399 - mercury - ERROR - Database initialization failed: Column expression expected for argument 'remote_side'; got <built-in function id>.
+2025-12-26 21:25:28,313 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:25:28,328 - mercury - INFO - Database tables created successfully
+2025-12-26 21:25:28,334 - mercury - ERROR - Database initialization failed: Column expression expected for argument 'remote_side'; got <built-in function id>.
+2025-12-26 21:25:30,229 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:25:30,239 - mercury - INFO - Database tables created successfully
+2025-12-26 21:25:30,243 - mercury - ERROR - Database initialization failed: Column expression expected for argument 'remote_side'; got <built-in function id>.
+2025-12-26 21:25:32,093 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:25:32,104 - mercury - INFO - Database tables created successfully
+2025-12-26 21:25:32,108 - mercury - ERROR - Database initialization failed: Column expression expected for argument 'remote_side'; got <built-in function id>.
+2025-12-26 21:25:34,151 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:25:34,161 - mercury - INFO - Database tables created successfully
+2025-12-26 21:25:34,165 - mercury - ERROR - Database initialization failed: Column expression expected for argument 'remote_side'; got <built-in function id>.
+2025-12-26 21:25:36,486 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:25:36,496 - mercury - INFO - Database tables created successfully
+2025-12-26 21:25:36,501 - mercury - ERROR - Database initialization failed: Column expression expected for argument 'remote_side'; got <built-in function id>.
+2025-12-26 21:25:39,979 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:25:40,013 - mercury - INFO - Database tables created successfully
+2025-12-26 21:25:40,020 - mercury - ERROR - Database initialization failed: Column expression expected for argument 'remote_side'; got <built-in function id>.
+2025-12-26 21:25:45,003 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:25:45,013 - mercury - INFO - Database tables created successfully
+2025-12-26 21:25:45,017 - mercury - ERROR - Database initialization failed: Column expression expected for argument 'remote_side'; got <built-in function id>.
+2025-12-26 21:25:53,013 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:25:53,024 - mercury - INFO - Database tables created successfully
+2025-12-26 21:25:53,030 - mercury - ERROR - Database initialization failed: Column expression expected for argument 'remote_side'; got <built-in function id>.
+2025-12-26 21:26:08,406 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:26:08,455 - mercury - INFO - Database tables created successfully
+2025-12-26 21:26:08,477 - mercury - ERROR - Database initialization failed: Relationship Account.parent could not determine any unambiguous local/remote column pairs based on join condition and remote_side arguments.  Consider using the remote() annotation to accurately mark those elements of the join condition that are on the remote side of the relationship.
+2025-12-26 21:26:13,452 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:26:13,463 - mercury - INFO - Database tables created successfully
+2025-12-26 21:26:13,468 - mercury - ERROR - Database initialization failed: Relationship Account.parent could not determine any unambiguous local/remote column pairs based on join condition and remote_side arguments.  Consider using the remote() annotation to accurately mark those elements of the join condition that are on the remote side of the relationship.
+2025-12-26 21:26:15,772 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:26:15,787 - mercury - INFO - Database tables created successfully
+2025-12-26 21:26:15,793 - mercury - ERROR - Database initialization failed: Relationship Account.parent could not determine any unambiguous local/remote column pairs based on join condition and remote_side arguments.  Consider using the remote() annotation to accurately mark those elements of the join condition that are on the remote side of the relationship.
+2025-12-26 21:26:18,013 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:26:18,024 - mercury - INFO - Database tables created successfully
+2025-12-26 21:26:18,030 - mercury - ERROR - Database initialization failed: Relationship Account.parent could not determine any unambiguous local/remote column pairs based on join condition and remote_side arguments.  Consider using the remote() annotation to accurately mark those elements of the join condition that are on the remote side of the relationship.
+2025-12-26 21:26:20,296 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:26:20,307 - mercury - INFO - Database tables created successfully
+2025-12-26 21:26:20,312 - mercury - ERROR - Database initialization failed: Relationship Account.parent could not determine any unambiguous local/remote column pairs based on join condition and remote_side arguments.  Consider using the remote() annotation to accurately mark those elements of the join condition that are on the remote side of the relationship.
+2025-12-26 21:26:23,202 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:26:23,212 - mercury - INFO - Database tables created successfully
+2025-12-26 21:26:23,218 - mercury - ERROR - Database initialization failed: Relationship Account.parent could not determine any unambiguous local/remote column pairs based on join condition and remote_side arguments.  Consider using the remote() annotation to accurately mark those elements of the join condition that are on the remote side of the relationship.
+2025-12-26 21:26:26,311 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:26:26,321 - mercury - INFO - Database tables created successfully
+2025-12-26 21:26:26,328 - mercury - ERROR - Database initialization failed: Relationship Account.parent could not determine any unambiguous local/remote column pairs based on join condition and remote_side arguments.  Consider using the remote() annotation to accurately mark those elements of the join condition that are on the remote side of the relationship.
+2025-12-26 21:26:31,476 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:26:31,488 - mercury - INFO - Database tables created successfully
+2025-12-26 21:26:31,495 - mercury - ERROR - Database initialization failed: Relationship Account.parent could not determine any unambiguous local/remote column pairs based on join condition and remote_side arguments.  Consider using the remote() annotation to accurately mark those elements of the join condition that are on the remote side of the relationship.
+2025-12-26 21:26:39,372 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:26:39,386 - mercury - INFO - Database tables created successfully
+2025-12-26 21:26:39,391 - mercury - ERROR - Database initialization failed: Relationship Account.parent could not determine any unambiguous local/remote column pairs based on join condition and remote_side arguments.  Consider using the remote() annotation to accurately mark those elements of the join condition that are on the remote side of the relationship.
+2025-12-26 21:26:45,954 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:26:45,965 - mercury - INFO - Database tables created successfully
+2025-12-26 21:26:45,971 - mercury - ERROR - Database initialization failed: Relationship Account.parent could not determine any unambiguous local/remote column pairs based on join condition and remote_side arguments.  Consider using the remote() annotation to accurately mark those elements of the join condition that are on the remote side of the relationship.
+2025-12-26 21:26:47,702 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:26:47,723 - mercury - INFO - Database tables created successfully
+2025-12-26 21:26:47,734 - mercury - ERROR - Database initialization failed: Relationship Account.parent could not determine any unambiguous local/remote column pairs based on join condition and remote_side arguments.  Consider using the remote() annotation to accurately mark those elements of the join condition that are on the remote side of the relationship.
+2025-12-26 21:26:49,449 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:26:49,459 - mercury - INFO - Database tables created successfully
+2025-12-26 21:26:49,464 - mercury - ERROR - Database initialization failed: Relationship Account.parent could not determine any unambiguous local/remote column pairs based on join condition and remote_side arguments.  Consider using the remote() annotation to accurately mark those elements of the join condition that are on the remote side of the relationship.
+2025-12-26 21:26:51,264 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:26:51,274 - mercury - INFO - Database tables created successfully
+2025-12-26 21:26:51,279 - mercury - ERROR - Database initialization failed: Relationship Account.parent could not determine any unambiguous local/remote column pairs based on join condition and remote_side arguments.  Consider using the remote() annotation to accurately mark those elements of the join condition that are on the remote side of the relationship.
+2025-12-26 21:26:53,629 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:26:53,639 - mercury - INFO - Database tables created successfully
+2025-12-26 21:26:53,644 - mercury - ERROR - Database initialization failed: Relationship Account.parent could not determine any unambiguous local/remote column pairs based on join condition and remote_side arguments.  Consider using the remote() annotation to accurately mark those elements of the join condition that are on the remote side of the relationship.
+2025-12-26 21:26:56,991 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:26:57,009 - mercury - INFO - Database tables created successfully
+2025-12-26 21:26:57,019 - mercury - ERROR - Database initialization failed: Relationship Account.parent could not determine any unambiguous local/remote column pairs based on join condition and remote_side arguments.  Consider using the remote() annotation to accurately mark those elements of the join condition that are on the remote side of the relationship.
+2025-12-26 21:27:01,692 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:27:01,703 - mercury - INFO - Database tables created successfully
+2025-12-26 21:27:01,708 - mercury - ERROR - Database initialization failed: Class 'sqlalchemy.engine.base.Transaction' is not mapped
+2025-12-26 21:27:09,604 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:27:09,614 - mercury - INFO - Database tables created successfully
+2025-12-26 21:27:09,619 - mercury - ERROR - Database initialization failed: Class 'sqlalchemy.engine.base.Transaction' is not mapped
+2025-12-26 21:27:20,898 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:27:20,908 - mercury - INFO - Database tables created successfully
+2025-12-26 21:27:20,913 - mercury - ERROR - Database initialization failed: Class 'sqlalchemy.engine.base.Transaction' is not mapped
+2025-12-26 21:27:22,757 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:27:22,771 - mercury - INFO - Database tables created successfully
+2025-12-26 21:27:22,777 - mercury - ERROR - Database initialization failed: Class 'sqlalchemy.engine.base.Transaction' is not mapped
+2025-12-26 21:27:24,579 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:27:24,589 - mercury - INFO - Database tables created successfully
+2025-12-26 21:27:24,593 - mercury - ERROR - Database initialization failed: Class 'sqlalchemy.engine.base.Transaction' is not mapped
+2025-12-26 21:27:26,540 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:27:26,550 - mercury - INFO - Database tables created successfully
+2025-12-26 21:27:26,554 - mercury - ERROR - Database initialization failed: Class 'sqlalchemy.engine.base.Transaction' is not mapped
+2025-12-26 21:27:28,785 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:27:28,800 - mercury - INFO - Database tables created successfully
+2025-12-26 21:27:28,804 - mercury - ERROR - Database initialization failed: Class 'sqlalchemy.engine.base.Transaction' is not mapped
+2025-12-26 21:27:31,959 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:27:31,969 - mercury - INFO - Database tables created successfully
+2025-12-26 21:27:31,973 - mercury - ERROR - Database initialization failed: Class 'sqlalchemy.engine.base.Transaction' is not mapped
+2025-12-26 21:27:36,731 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:27:36,743 - mercury - INFO - Database tables created successfully
+2025-12-26 21:27:36,747 - mercury - ERROR - Database initialization failed: Class 'sqlalchemy.engine.base.Transaction' is not mapped
+2025-12-26 21:27:45,374 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:27:45,385 - mercury - INFO - Database tables created successfully
+2025-12-26 21:27:45,389 - mercury - ERROR - Database initialization failed: Class 'sqlalchemy.engine.base.Transaction' is not mapped
+2025-12-26 21:27:59,743 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:27:59,758 - mercury - INFO - Database tables created successfully
+2025-12-26 21:27:59,763 - mercury - ERROR - Database initialization failed: When initializing mapper Mapper[Account(accounts)], expression 'app.models.transaction.Transaction' failed to locate a name ("Module 'models' has no mapped classes registered under the name 'transaction'"). If this is a class name, consider adding this relationship() to the <class 'app.models.account.Account'> class after both dependent classes have been defined.
+2025-12-26 21:28:16,763 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:28:16,774 - mercury - INFO - Database tables created successfully
+2025-12-26 21:28:16,779 - mercury - ERROR - Database initialization failed: When initializing mapper Mapper[Account(accounts)], expression 'app.models.transaction.Transaction' failed to locate a name ("Module 'models' has no mapped classes registered under the name 'transaction'"). If this is a class name, consider adding this relationship() to the <class 'app.models.account.Account'> class after both dependent classes have been defined.
+2025-12-26 21:28:18,441 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:28:18,452 - mercury - INFO - Database tables created successfully
+2025-12-26 21:28:18,456 - mercury - ERROR - Database initialization failed: When initializing mapper Mapper[Account(accounts)], expression 'app.models.transaction.Transaction' failed to locate a name ("Module 'models' has no mapped classes registered under the name 'transaction'"). If this is a class name, consider adding this relationship() to the <class 'app.models.account.Account'> class after both dependent classes have been defined.
+2025-12-26 21:28:20,249 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:28:20,260 - mercury - INFO - Database tables created successfully
+2025-12-26 21:28:20,264 - mercury - ERROR - Database initialization failed: When initializing mapper Mapper[Account(accounts)], expression 'app.models.transaction.Transaction' failed to locate a name ("Module 'models' has no mapped classes registered under the name 'transaction'"). If this is a class name, consider adding this relationship() to the <class 'app.models.account.Account'> class after both dependent classes have been defined.
+2025-12-26 21:28:22,116 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:28:22,126 - mercury - INFO - Database tables created successfully
+2025-12-26 21:28:22,130 - mercury - ERROR - Database initialization failed: When initializing mapper Mapper[Account(accounts)], expression 'app.models.transaction.Transaction' failed to locate a name ("Module 'models' has no mapped classes registered under the name 'transaction'"). If this is a class name, consider adding this relationship() to the <class 'app.models.account.Account'> class after both dependent classes have been defined.
+2025-12-26 21:28:24,357 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:28:24,367 - mercury - INFO - Database tables created successfully
+2025-12-26 21:28:24,371 - mercury - ERROR - Database initialization failed: When initializing mapper Mapper[Account(accounts)], expression 'app.models.transaction.Transaction' failed to locate a name ("Module 'models' has no mapped classes registered under the name 'transaction'"). If this is a class name, consider adding this relationship() to the <class 'app.models.account.Account'> class after both dependent classes have been defined.
+2025-12-26 21:28:27,500 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:28:27,510 - mercury - INFO - Database tables created successfully
+2025-12-26 21:28:27,514 - mercury - ERROR - Database initialization failed: When initializing mapper Mapper[Account(accounts)], expression 'app.models.transaction.Transaction' failed to locate a name ("Module 'models' has no mapped classes registered under the name 'transaction'"). If this is a class name, consider adding this relationship() to the <class 'app.models.account.Account'> class after both dependent classes have been defined.
+2025-12-26 21:28:32,215 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:28:32,225 - mercury - INFO - Database tables created successfully
+2025-12-26 21:28:32,235 - mercury - ERROR - Database initialization failed: (psycopg2.errors.UndefinedTable) relation "accounts" does not exist
+LINE 2: FROM accounts 
+             ^
+
+[SQL: SELECT accounts.code AS accounts_code, accounts.name AS accounts_name, accounts.account_type AS accounts_account_type, accounts.parent_id AS accounts_parent_id, accounts.description AS accounts_description, accounts.is_active AS accounts_is_active, accounts.balance AS accounts_balance, accounts.id AS accounts_id, accounts.created_at AS accounts_created_at, accounts.updated_at AS accounts_updated_at 
+FROM accounts 
+WHERE accounts.code = %(code_1)s 
+ LIMIT %(param_1)s]
+[parameters: {'code_1': '1000', 'param_1': 1}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+2025-12-26 21:28:40,097 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:28:40,107 - mercury - INFO - Database tables created successfully
+2025-12-26 21:28:40,115 - mercury - ERROR - Database initialization failed: (psycopg2.errors.UndefinedTable) relation "accounts" does not exist
+LINE 2: FROM accounts 
+             ^
+
+[SQL: SELECT accounts.code AS accounts_code, accounts.name AS accounts_name, accounts.account_type AS accounts_account_type, accounts.parent_id AS accounts_parent_id, accounts.description AS accounts_description, accounts.is_active AS accounts_is_active, accounts.balance AS accounts_balance, accounts.id AS accounts_id, accounts.created_at AS accounts_created_at, accounts.updated_at AS accounts_updated_at 
+FROM accounts 
+WHERE accounts.code = %(code_1)s 
+ LIMIT %(param_1)s]
+[parameters: {'code_1': '1000', 'param_1': 1}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+2025-12-26 21:28:52,799 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:28:52,809 - mercury - INFO - Database tables created successfully
+2025-12-26 21:28:52,818 - mercury - ERROR - Database initialization failed: (psycopg2.errors.UndefinedTable) relation "accounts" does not exist
+LINE 2: FROM accounts 
+             ^
+
+[SQL: SELECT accounts.code AS accounts_code, accounts.name AS accounts_name, accounts.account_type AS accounts_account_type, accounts.parent_id AS accounts_parent_id, accounts.description AS accounts_description, accounts.is_active AS accounts_is_active, accounts.balance AS accounts_balance, accounts.id AS accounts_id, accounts.created_at AS accounts_created_at, accounts.updated_at AS accounts_updated_at 
+FROM accounts 
+WHERE accounts.code = %(code_1)s 
+ LIMIT %(param_1)s]
+[parameters: {'code_1': '1000', 'param_1': 1}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+2025-12-26 21:28:54,584 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:28:54,598 - mercury - INFO - Database tables created successfully
+2025-12-26 21:28:54,609 - mercury - ERROR - Database initialization failed: (psycopg2.errors.UndefinedTable) relation "accounts" does not exist
+LINE 2: FROM accounts 
+             ^
+
+[SQL: SELECT accounts.code AS accounts_code, accounts.name AS accounts_name, accounts.account_type AS accounts_account_type, accounts.parent_id AS accounts_parent_id, accounts.description AS accounts_description, accounts.is_active AS accounts_is_active, accounts.balance AS accounts_balance, accounts.id AS accounts_id, accounts.created_at AS accounts_created_at, accounts.updated_at AS accounts_updated_at 
+FROM accounts 
+WHERE accounts.code = %(code_1)s 
+ LIMIT %(param_1)s]
+[parameters: {'code_1': '1000', 'param_1': 1}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+2025-12-26 21:28:56,343 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:28:56,357 - mercury - INFO - Database tables created successfully
+2025-12-26 21:28:56,371 - mercury - ERROR - Database initialization failed: (psycopg2.errors.UndefinedTable) relation "accounts" does not exist
+LINE 2: FROM accounts 
+             ^
+
+[SQL: SELECT accounts.code AS accounts_code, accounts.name AS accounts_name, accounts.account_type AS accounts_account_type, accounts.parent_id AS accounts_parent_id, accounts.description AS accounts_description, accounts.is_active AS accounts_is_active, accounts.balance AS accounts_balance, accounts.id AS accounts_id, accounts.created_at AS accounts_created_at, accounts.updated_at AS accounts_updated_at 
+FROM accounts 
+WHERE accounts.code = %(code_1)s 
+ LIMIT %(param_1)s]
+[parameters: {'code_1': '1000', 'param_1': 1}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+2025-12-26 21:28:58,245 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:28:58,257 - mercury - INFO - Database tables created successfully
+2025-12-26 21:28:58,265 - mercury - ERROR - Database initialization failed: (psycopg2.errors.UndefinedTable) relation "accounts" does not exist
+LINE 2: FROM accounts 
+             ^
+
+[SQL: SELECT accounts.code AS accounts_code, accounts.name AS accounts_name, accounts.account_type AS accounts_account_type, accounts.parent_id AS accounts_parent_id, accounts.description AS accounts_description, accounts.is_active AS accounts_is_active, accounts.balance AS accounts_balance, accounts.id AS accounts_id, accounts.created_at AS accounts_created_at, accounts.updated_at AS accounts_updated_at 
+FROM accounts 
+WHERE accounts.code = %(code_1)s 
+ LIMIT %(param_1)s]
+[parameters: {'code_1': '1000', 'param_1': 1}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+2025-12-26 21:29:00,513 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:29:00,523 - mercury - INFO - Database tables created successfully
+2025-12-26 21:29:00,531 - mercury - ERROR - Database initialization failed: (psycopg2.errors.UndefinedTable) relation "accounts" does not exist
+LINE 2: FROM accounts 
+             ^
+
+[SQL: SELECT accounts.code AS accounts_code, accounts.name AS accounts_name, accounts.account_type AS accounts_account_type, accounts.parent_id AS accounts_parent_id, accounts.description AS accounts_description, accounts.is_active AS accounts_is_active, accounts.balance AS accounts_balance, accounts.id AS accounts_id, accounts.created_at AS accounts_created_at, accounts.updated_at AS accounts_updated_at 
+FROM accounts 
+WHERE accounts.code = %(code_1)s 
+ LIMIT %(param_1)s]
+[parameters: {'code_1': '1000', 'param_1': 1}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+2025-12-26 21:29:03,577 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:29:03,587 - mercury - INFO - Database tables created successfully
+2025-12-26 21:29:03,596 - mercury - ERROR - Database initialization failed: (psycopg2.errors.UndefinedTable) relation "accounts" does not exist
+LINE 2: FROM accounts 
+             ^
+
+[SQL: SELECT accounts.code AS accounts_code, accounts.name AS accounts_name, accounts.account_type AS accounts_account_type, accounts.parent_id AS accounts_parent_id, accounts.description AS accounts_description, accounts.is_active AS accounts_is_active, accounts.balance AS accounts_balance, accounts.id AS accounts_id, accounts.created_at AS accounts_created_at, accounts.updated_at AS accounts_updated_at 
+FROM accounts 
+WHERE accounts.code = %(code_1)s 
+ LIMIT %(param_1)s]
+[parameters: {'code_1': '1000', 'param_1': 1}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+2025-12-26 21:29:08,292 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:29:08,302 - mercury - INFO - Database tables created successfully
+2025-12-26 21:29:08,310 - mercury - ERROR - Database initialization failed: (psycopg2.errors.UndefinedTable) relation "accounts" does not exist
+LINE 2: FROM accounts 
+             ^
+
+[SQL: SELECT accounts.code AS accounts_code, accounts.name AS accounts_name, accounts.account_type AS accounts_account_type, accounts.parent_id AS accounts_parent_id, accounts.description AS accounts_description, accounts.is_active AS accounts_is_active, accounts.balance AS accounts_balance, accounts.id AS accounts_id, accounts.created_at AS accounts_created_at, accounts.updated_at AS accounts_updated_at 
+FROM accounts 
+WHERE accounts.code = %(code_1)s 
+ LIMIT %(param_1)s]
+[parameters: {'code_1': '1000', 'param_1': 1}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+2025-12-26 21:29:16,451 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:29:16,462 - mercury - INFO - Database tables created successfully
+2025-12-26 21:29:16,472 - mercury - ERROR - Database initialization failed: (psycopg2.errors.UndefinedTable) relation "accounts" does not exist
+LINE 2: FROM accounts 
+             ^
+
+[SQL: SELECT accounts.code AS accounts_code, accounts.name AS accounts_name, accounts.account_type AS accounts_account_type, accounts.parent_id AS accounts_parent_id, accounts.description AS accounts_description, accounts.is_active AS accounts_is_active, accounts.balance AS accounts_balance, accounts.id AS accounts_id, accounts.created_at AS accounts_created_at, accounts.updated_at AS accounts_updated_at 
+FROM accounts 
+WHERE accounts.code = %(code_1)s 
+ LIMIT %(param_1)s]
+[parameters: {'code_1': '1000', 'param_1': 1}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+2025-12-26 21:29:30,709 - mercury - INFO - Starting Mercury Commerce Platform
+2025-12-26 21:29:30,719 - mercury - INFO - Database tables created successfully
+2025-12-26 21:29:30,728 - mercury - WARNING - Could not query accounts table during defaults init: (psycopg2.errors.UndefinedTable) relation "accounts" does not exist
+LINE 2: FROM accounts 
+             ^
+
+[SQL: SELECT accounts.code AS accounts_code, accounts.name AS accounts_name, accounts.account_type AS accounts_account_type, accounts.parent_id AS accounts_parent_id, accounts.description AS accounts_description, accounts.is_active AS accounts_is_active, accounts.balance AS accounts_balance, accounts.id AS accounts_id, accounts.created_at AS accounts_created_at, accounts.updated_at AS accounts_updated_at 
+FROM accounts 
+WHERE accounts.code = %(code_1)s 
+ LIMIT %(param_1)s]
+[parameters: {'code_1': '1000', 'param_1': 1}]
+(Background on this error at: https://sqlalche.me/e/20/f405). Attempting to create tables and insert defaults.
+2025-12-26 21:29:30,762 - mercury - ERROR - Database initialization failed: 'type' is an invalid keyword argument for Account

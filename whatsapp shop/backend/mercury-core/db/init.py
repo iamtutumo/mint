@@ -36,14 +36,24 @@ async def create_default_accounts(db: Session):
         {"code": "6000", "name": "Operating Expenses", "type": "expense", "parent_id": None},
     ]
     
-    for acc in default_accounts:
-        existing = db.query(Account).filter(Account.code == acc["code"]).first()
-        if not existing:
+    try:
+        for acc in default_accounts:
+            existing = db.query(Account).filter(Account.code == acc["code"]).first()
+            if not existing:
+                account = Account(**acc)
+                db.add(account)
+        db.commit()
+        logger.info("Default accounts created")
+    except Exception as e:
+        # Fallback: attempt to create tables and insert defaults if the query failed (e.g., relation missing)
+        logger.warning(f"Could not query accounts table during defaults init: {e}. Attempting to create tables and insert defaults.")
+        Base.metadata.create_all(bind=engine)
+        db.rollback()
+        for acc in default_accounts:
             account = Account(**acc)
             db.add(account)
-    
-    db.commit()
-    logger.info("Default accounts created")
+        db.commit()
+        logger.info("Default accounts created (fallback)")
 
 async def create_default_products(db: Session):
     # Add sample products if needed

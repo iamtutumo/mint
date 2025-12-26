@@ -25,5 +25,8 @@ class Account(BaseModel):
     balance = Column(Numeric(15, 2), default=0)
     
     # Relationships
-    parent = relationship("Account", remote_side=[id])
-    transactions = relationship("Transaction", back_populates="account")
+    # Self-referential parent/children relationships are temporarily disabled
+    # to avoid ambiguity with SQLAlchemy's remote_side detection. Re-enable
+    # with an explicit primaryjoin/remote() annotation if needed.
+    # transactions relationship temporarily disabled to avoid mapper resolution issues during startup
+    # transactions = relationship("app.models.transaction.Transaction", back_populates="account")

@@ -6,8 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uuid
 
-from .config.settings import settings
-from .agents.base_agent import BaseAgent, Task, AgentResponse
+from config.settings import settings
+from agents.base_agent import BaseAgent, Task, AgentResponse
 
 logger = logging.getLogger(__name__)
 

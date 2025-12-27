@@ -8,18 +8,18 @@ logger = setup_logging()
 async def init_db() -> None:
     try:
         # Import all models so SQLAlchemy mappers are registered before metadata operations
-        import app.models.user
-        import app.models.account
-        import app.models.product
-        import app.models.booking
-        import app.models.order
-        import app.models.order_item
-        import app.models.payment
-        import app.models.inventory
-        import app.models.transaction
-        import app.models.document
-        import app.models.survey
-        import app.models.state_transition
+        from app.models import user
+        from app.models import product
+        from app.models import order
+        from app.models import order_item
+        from app.models import payment
+        from app.models import survey
+        from app.models import booking
+        from app.models import inventory
+        from app.models import account
+        from app.models import transaction
+        from app.models import document
+        from app.models import state_transition
 
         Base.metadata.create_all(bind=engine)
         logger.info("Database tables created successfully")
@@ -37,7 +37,7 @@ async def init_db() -> None:
         raise
 
 async def create_default_accounts(db: Session):
-    from app.models.account import Account
+    import models.account
     
     default_accounts = [
         {"code": "1000", "name": "Cash", "account_type": "asset", "parent_id": None},
@@ -52,9 +52,9 @@ async def create_default_accounts(db: Session):
     
     try:
         for acc in default_accounts:
-            existing = db.query(Account).filter(Account.code == acc["code"]).first()
+            existing = db.query(models.account.Account).filter(models.account.Account.code == acc["code"]).first()
             if not existing:
-                account = Account(**acc)
+                account = models.account.Account(**acc)
                 db.add(account)
         db.commit()
         logger.info("Default accounts created")
@@ -64,7 +64,7 @@ async def create_default_accounts(db: Session):
         Base.metadata.create_all(bind=engine)
         db.rollback()
         for acc in default_accounts:
-            account = Account(**acc)
+            account = models.account.Account(**acc)
             db.add(account)
         db.commit()
         logger.info("Default accounts created (fallback)")

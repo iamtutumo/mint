@@ -13,7 +13,9 @@ class DocumentType(str, enum.Enum):
     FINANCIAL_REPORT = "financial_report"
 
 class Document(BaseModel):
+    __table_args__ = {'extend_existing': True}
     __tablename__ = "documents"
+    
     
     document_number = Column(String(50), unique=True, index=True, nullable=False)
     document_type = Column(SQLEnum(DocumentType), nullable=False)

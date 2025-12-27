@@ -12,7 +12,9 @@ class AccountType(str, enum.Enum):
     EXPENSE = "expense"
 
 class Account(BaseModel):
+    __table_args__ = {'extend_existing': True}
     __tablename__ = "accounts"
+    
     
     code = Column(String(20), unique=True, index=True, nullable=False)
     name = Column(String(100), nullable=False)

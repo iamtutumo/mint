@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings
+from pydantic import field_validator
 from typing import List
 import secrets
 
@@ -10,8 +11,14 @@ class Settings(BaseSettings):
     
     # Security
     SECRET_KEY: str = secrets.token_urlsafe(32)
-    OWNER_PHONE_NUMBERS: List[str] = []
+    OWNER_PHONE_NUMBERS: str = ""
     SUPERUSER_PASSWORD: str = ""
+    
+    @property
+    def OWNER_PHONE_NUMBERS_LIST(self) -> List[str]:
+        if self.OWNER_PHONE_NUMBERS:
+            return [phone.strip() for phone in self.OWNER_PHONE_NUMBERS.split(',') if phone.strip()]
+        return []
     
     # Database
     POSTGRES_SERVER: str = "localhost"
@@ -28,6 +35,8 @@ class Settings(BaseSettings):
     MINIO_ENDPOINT: str = "localhost:9000"
     MINIO_ACCESS_KEY: str = ""
     MINIO_SECRET_KEY: str = ""
+    MINIO_ROOT_USER: str = "minioadmin"
+    MINIO_ROOT_PASSWORD: str = "minioadmin"
     MINIO_BUCKET_DOCUMENTS: str = "documents"
     MINIO_BUCKET_DIGITAL_PRODUCTS: str = "digital-products"
     MINIO_BUCKET_REPORTS: str = "reports"
@@ -50,6 +59,9 @@ class Settings(BaseSettings):
     EVOLUTION_API_KEY: str = ""
     EVOLUTION_INSTANCE: str = "mercury-bot"
     
+    # Redis
+    REDIS_URL: str = "redis://localhost:6379/0"
+    
     # Google Calendar
     GOOGLE_CALENDAR_CREDENTIALS_FILE: str = ""
     GOOGLE_CALENDAR_ID: str = ""
@@ -58,7 +70,13 @@ class Settings(BaseSettings):
     N8N_WEBHOOK_URL: str = "http://localhost:5678/webhook"
     
     # CORS
-    ALLOWED_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:8000"]
+    ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:8000"
+    
+    @property
+    def ALLOWED_ORIGINS_LIST(self) -> List[str]:
+        if self.ALLOWED_ORIGINS:
+            return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(',') if origin.strip()]
+        return ["http://localhost:3000", "http://localhost:8000"]
     
     # Orders
     ORDER_EXPIRY_HOURS: int = 24
@@ -68,7 +86,7 @@ class Settings(BaseSettings):
     PDF_DEFAULT_PASSWORD: str = ""
     
     class Config:
-        env_file = ".env"
+        env_file = "../.env"
         case_sensitive = True
 
 settings = Settings()

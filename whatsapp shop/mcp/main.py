@@ -1,9 +1,9 @@
 import asyncio
 import logging
 import signal
-from .mcp_service import create_mcp_service
-from .agents.order_agent import OrderAgent
-from .config import settings
+from mcp_service import create_mcp_service
+from agents.order_agent import OrderAgent
+from config import settings
 
 # Configure logging
 logging.basicConfig(

@@ -10,7 +10,9 @@ class UserRole(str, enum.Enum):
     STAFF = "staff"
 
 class User(BaseModel):
+    __table_args__ = {'extend_existing': True}
     __tablename__ = "users"
+    
     
     phone_number = Column(String(20), unique=True, index=True, nullable=False)
     name = Column(String(100))
@@ -22,9 +24,9 @@ class User(BaseModel):
     whatsapp_verified = Column(Boolean, default=False)
     
     # Relationships
-    orders = relationship("Order", back_populates="customer")
-    bookings = relationship("Booking", back_populates="customer")
-    surveys = relationship("Survey", back_populates="customer")
+    orders = relationship("order.Order", back_populates="customer")
+    bookings = relationship("booking.Booking", back_populates="customer")
+    surveys = relationship("survey.Survey", back_populates="customer")
 
 
 # Pydantic models used by auth endpoints

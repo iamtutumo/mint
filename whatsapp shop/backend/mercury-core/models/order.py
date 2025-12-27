@@ -22,7 +22,9 @@ class OrderSource(str, enum.Enum):
     MANUAL = "manual"
 
 class Order(BaseModel):
+    __table_args__ = {'extend_existing': True}
     __tablename__ = "orders"
+    
     
     order_number = Column(String(50), unique=True, index=True, nullable=False)
     customer_id = Column(Integer, ForeignKey("users.id"), nullable=False)

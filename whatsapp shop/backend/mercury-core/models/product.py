@@ -11,7 +11,9 @@ class ProductType(str, enum.Enum):
     SERVICE = "service"
 
 class Product(BaseModel):
+    __table_args__ = {'extend_existing': True}
     __tablename__ = "products"
+    
     
     name = Column(String(200), nullable=False, index=True)
     description = Column(Text)

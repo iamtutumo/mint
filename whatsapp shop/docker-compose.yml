@@ -117,11 +117,13 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: mercury_celery_worker
+    working_dir: /app/mercury-core
     command: celery -A app.worker.celery_app worker --loglevel=info
     volumes:
       - ./backend:/app
       - ./data:/app/data
     environment:
+      - PYTHONPATH=/app/mercury-core
       - POSTGRES_SERVER=db
       - POSTGRES_USER=mercury
       - POSTGRES_PASSWORD=mercury_password
@@ -144,11 +146,13 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: mercury_celery_beat
+    working_dir: /app/mercury-core
     command: celery -A app.worker.celery_app beat --loglevel=info
     volumes:
       - ./backend:/app
       - ./data:/app/data
     environment:
+      - PYTHONPATH=/app/mercury-core
       - POSTGRES_SERVER=db
       - POSTGRES_USER=mercury
       - POSTGRES_PASSWORD=mercury_password

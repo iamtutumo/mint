@@ -1,7 +1,7 @@
 from typing import Dict, Any, Optional
 import logging
-from ..config import settings
-from .base_agent import BaseAgent, Task, AgentResponse
+from config import settings
+from agents.base_agent import BaseAgent, Task, AgentResponse
 
 logger = logging.getLogger(__name__)
 

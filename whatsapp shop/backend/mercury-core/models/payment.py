@@ -17,7 +17,9 @@ class PaymentMethod(str, enum.Enum):
     CARD = "card"
 
 class Payment(BaseModel):
+    __table_args__ = {'extend_existing': True}
     __tablename__ = "payments"
+    
     
     order_id = Column(Integer, ForeignKey("orders.id"), nullable=False)
     amount = Column(Numeric(10, 2), nullable=False)

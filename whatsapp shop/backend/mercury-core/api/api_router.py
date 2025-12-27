@@ -16,7 +16,9 @@ def _safe_include(module_name: str, router_name: str = "router", prefix: str | N
         logger.info(f"Included router from {module_name}")
         return True
     except Exception as e:
-        logger.warning(f"Could not include router from {module_name}: {e}")
+        logger.error(f"Could not include router from {module_name}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return False
 
 # v1 routers (preferred location)
@@ -44,7 +46,8 @@ for name, tag in (
     ("transactions", "transactions"),
     ("reports", "reports"),
     ("webhooks", "webhooks"),
-    ("auth", "auth")
+    ("auth", "auth"),
+    ("mcp", "mcp")
 ):
     # Try various possible module locations
     imported = False

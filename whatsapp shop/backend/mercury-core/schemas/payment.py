@@ -23,30 +23,33 @@ class PaymentMethod(str, Enum):
     OTHER = "other"
 
 class PaymentBase(BaseModel):
-    order_id: str
+    order_id: int
     amount: float = Field(..., gt=0)
-    currency: str = Field("USD", min_length=3, max_length=3)
-    payment_method: PaymentMethod
-    transaction_id: Optional[str] = None
-    status: PaymentStatus = PaymentStatus.PENDING
-    payment_date: Optional[datetime] = None
-    payment_details: Optional[Dict[str, Any]] = None
-    metadata: Optional[Dict[str, Any]] = None
+    payment_method: str  # Changed from enum to str to match model
+    payment_reference: Optional[str] = None
+    status: str = "pending"  # Changed from enum to str
+    verified_at: Optional[datetime] = None
+    verified_by: Optional[str] = None
+    rejection_reason: Optional[str] = None
+    notes: Optional[str] = None
 
 class PaymentCreate(PaymentBase):
     pass
 
 class PaymentUpdate(BaseModel):
-    status: Optional[PaymentStatus] = None
-    transaction_id: Optional[str] = None
-    payment_date: Optional[datetime] = None
-    payment_details: Optional[Dict[str, Any]] = None
-    metadata: Optional[Dict[str, Any]] = None
+    status: Optional[str] = None
+    verified_at: Optional[datetime] = None
+    verified_by: Optional[str] = None
+    rejection_reason: Optional[str] = None
+    notes: Optional[str] = None
 
 class Payment(PaymentBase):
     id: str
     created_at: datetime
     updated_at: datetime
+    
+    class Config:
+        from_attributes = True
     
     class Config:
         orm_mode = True

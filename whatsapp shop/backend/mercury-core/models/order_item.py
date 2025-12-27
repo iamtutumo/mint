@@ -4,7 +4,9 @@ from sqlalchemy.orm import relationship
 from app.db.base import BaseModel
 
 class OrderItem(BaseModel):
+    __table_args__ = {'extend_existing': True}
     __tablename__ = "order_items"
+    
     
     order_id = Column(Integer, ForeignKey("orders.id"), nullable=False)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)

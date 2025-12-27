@@ -12,7 +12,9 @@ class MovementType(str, enum.Enum):
     DAMAGE = "damage"
 
 class InventoryMovement(BaseModel):
+    __table_args__ = {'extend_existing': True}
     __tablename__ = "inventory_movements"
+    
     
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
     movement_type = Column(SQLEnum(MovementType), nullable=False)
@@ -23,4 +25,4 @@ class InventoryMovement(BaseModel):
     performed_by = Column(String(20))
     
     # Relationships
-    product = relationship("Product", back_populates="inventory_movements")
+    product = relationship("product.Product", back_populates="inventory_movements")

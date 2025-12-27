@@ -19,4 +19,4 @@ RUN useradd -m appuser && chown -R appuser:appuser /app
 USER appuser
 
 # Run the application
-CMD ["python", "-m", "mcp.main"]
+CMD ["python", "main.py"]

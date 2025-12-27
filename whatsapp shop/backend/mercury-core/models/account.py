@@ -19,7 +19,7 @@ class Account(BaseModel):
     code = Column(String(20), unique=True, index=True, nullable=False)
     name = Column(String(100), nullable=False)
     account_type = Column(SQLEnum(AccountType), nullable=False)
-    parent_id = Column(Integer, ForeignKey("accounts.id"))
+    # parent_id = Column(Integer, ForeignKey("accounts.id"))  # Temporarily disabled
     description = Column(String(500))
     is_active = Column(Boolean, default=True)
     

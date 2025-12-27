@@ -26,14 +26,14 @@ async def create_default_accounts(db: Session):
     from app.models.account import Account
     
     default_accounts = [
-        {"code": "1000", "name": "Cash", "account_type": "asset", "parent_id": None},
-        {"code": "1100", "name": "Bank", "account_type": "asset", "parent_id": None},
-        {"code": "1200", "name": "Mobile Money", "account_type": "asset", "parent_id": None},
-        {"code": "2000", "name": "Accounts Payable", "account_type": "liability", "parent_id": None},
-        {"code": "3000", "name": "Owner's Equity", "account_type": "equity", "parent_id": None},
-        {"code": "4000", "name": "Sales Revenue", "account_type": "income", "parent_id": None},
-        {"code": "5000", "name": "Cost of Goods Sold", "account_type": "expense", "parent_id": None},
-        {"code": "6000", "name": "Operating Expenses", "account_type": "expense", "parent_id": None},
+        {"code": "1000", "name": "Cash", "account_type": "asset"},
+        {"code": "1100", "name": "Bank", "account_type": "asset"},
+        {"code": "1200", "name": "Mobile Money", "account_type": "asset"},
+        {"code": "2000", "name": "Accounts Payable", "account_type": "liability"},
+        {"code": "3000", "name": "Owner's Equity", "account_type": "equity"},
+        {"code": "4000", "name": "Sales Revenue", "account_type": "income"},
+        {"code": "5000", "name": "Cost of Goods Sold", "account_type": "expense"},
+        {"code": "6000", "name": "Operating Expenses", "account_type": "expense"},
     ]
     
     try:

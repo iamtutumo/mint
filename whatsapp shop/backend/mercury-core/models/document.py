@@ -3,6 +3,8 @@ from sqlalchemy.orm import relationship
 import enum
 
 from app.db.base import BaseModel
+from app.models.order import Order
+from app.models.user import User
 
 class DocumentType(str, enum.Enum):
     INVOICE = "invoice"
@@ -33,5 +35,5 @@ class Document(BaseModel):
     customer_id = Column(Integer, ForeignKey("users.id"))
     
     # Relationships
-    order = relationship("models.order.Order")
-    customer = relationship("models.user.User")
+    order = relationship("app.models.order.Order")
+    customer = relationship("app.models.user.User")

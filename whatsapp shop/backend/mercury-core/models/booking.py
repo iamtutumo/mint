@@ -43,4 +43,4 @@ class Booking(BaseModel):
     
     # Relationships
     # customer = relationship("models.user.User", back_populates="bookings")  # Commented out to avoid dependency issue
-    product = relationship("models.product.Product")
+    product = relationship("app.models.product.Product")

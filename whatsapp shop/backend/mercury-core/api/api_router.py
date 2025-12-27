@@ -4,20 +4,6 @@ import logging
 api_router = APIRouter()
 logger = logging.getLogger("mercury")
 
-# Import all models to ensure they are registered with SQLAlchemy
-from models.product import Product
-from models.user import User
-from models.order import Order
-from models.order_item import OrderItem
-from models.account import Account
-from models.document import Document
-from models.survey import Survey
-from models.booking import Booking
-from models.inventory import InventoryMovement
-from models.transaction import Transaction
-from models.payment import Payment
-from models.state_transition import OrderStateTransition
-
 # Helper to safely import and include routers from modules that may not exist
 def _safe_include(module_name: str, router_name: str = "router", prefix: str | None = None, tags: list | None = None) -> bool:
     try:
@@ -65,7 +51,7 @@ for name, tag in (
     # Try various possible module locations
     imported = False
     for module_try in (f"app.api.v1.{name}", f"api.v1.{name}", f"api.{name}"):
-        if _safe_include(module_try, tags=[tag]):
+        if _safe_include(module_try):
             imported = True
             break
     if not imported:

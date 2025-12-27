@@ -16,5 +16,5 @@ class Survey(BaseModel):
     responses = Column(JSON, default=dict)
     
     # Relationships
-    order = relationship("models.order.Order")
+    order = relationship("app.models.order.Order")
     # customer = relationship("models.user.User", back_populates="surveys")  # Commented out to avoid dependency issue

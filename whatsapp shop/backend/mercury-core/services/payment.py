@@ -4,7 +4,8 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 import uuid
 
-import models
+from app.models.payment import Payment
+from app.models.order import Order
 from app.schemas.payment import PaymentCreate, PaymentUpdate
 from app.core.logging import setup_logging
 
@@ -12,27 +13,27 @@ logger = setup_logging()
 
 class PaymentService:
     @staticmethod
-    def get_payment(db: Session, payment_id: str) -> Optional[models.Payment]:
+    def get_payment(db: Session, payment_id: str) -> Optional[Payment]:
         """Get a payment by ID"""
-        return db.query(models.Payment).filter(models.Payment.id == payment_id).first()
+        return db.query(Payment).filter(Payment.id == payment_id).first()
 
     @staticmethod
-    def get_payments_by_order(db: Session, order_id: int) -> List[models.Payment]:
+    def get_payments_by_order(db: Session, order_id: int) -> List[Payment]:
         """Get all payments for an order"""
-        return db.query(models.Payment).filter(models.Payment.order_id == order_id).all()
+        return db.query(Payment).filter(Payment.order_id == order_id).all()
 
     @staticmethod
-    def create_payment(db: Session, payment_data: PaymentCreate) -> models.Payment:
+    def create_payment(db: Session, payment_data: PaymentCreate) -> Payment:
         """Create a new payment"""
         # Verify order exists
-        order = db.query(models.Order).filter(models.Order.id == payment_data.order_id).first()
+        order = db.query(Order).filter(Order.id == payment_data.order_id).first()
         if not order:
-            raise ValueError(f"models.Order {payment_data.order_id} not found")
+            raise ValueError(f"Order {payment_data.order_id} not found")
 
         # Generate payment reference
         payment_reference = f"PAY-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:8].upper()}"
 
-        payment = models.Payment(
+        payment = Payment(
             order_id=payment_data.order_id,
             amount=payment_data.amount,
             payment_method=payment_data.payment_method,
@@ -49,11 +50,11 @@ class PaymentService:
         return payment
 
     @staticmethod
-    def update_payment(db: Session, payment_id: str, payment_data: PaymentUpdate) -> models.Payment:
+    def update_payment(db: Session, payment_id: str, payment_data: PaymentUpdate) -> Payment:
         """Update a payment"""
-        payment = db.query(models.Payment).filter(models.Payment.id == payment_id).first()
+        payment = db.query(Payment).filter(Payment.id == payment_id).first()
         if not payment:
-            raise ValueError(f"models.Payment {payment_id} not found")
+            raise ValueError(f"Payment {payment_id} not found")
 
         update_data = payment_data.dict(exclude_unset=True)
 
@@ -81,7 +82,7 @@ class PaymentService:
     @staticmethod
     def delete_payment(db: Session, payment_id: str) -> bool:
         """Delete a payment"""
-        payment = db.query(models.Payment).filter(models.Payment.id == payment_id).first()
+        payment = db.query(Payment).filter(Payment.id == payment_id).first()
         if not payment:
             return False
 
@@ -105,20 +106,20 @@ class PaymentService:
         payment_method: Optional[str] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None
-    ) -> List[models.Payment]:
+    ) -> List[Payment]:
         """Get payments with optional filters"""
-        query = db.query(models.Payment)
+        query = db.query(Payment)
 
         if order_id:
-            query = query.filter(models.Payment.order_id == order_id)
+            query = query.filter(Payment.order_id == order_id)
         if status:
-            query = query.filter(models.Payment.status == status)
+            query = query.filter(Payment.status == status)
         if payment_method:
-            query = query.filter(models.Payment.payment_method == payment_method)
+            query = query.filter(Payment.payment_method == payment_method)
         if start_date:
-            query = query.filter(models.Payment.created_at >= start_date)
+            query = query.filter(Payment.created_at >= start_date)
         if end_date:
-            query = query.filter(models.Payment.created_at <= end_date)
+            query = query.filter(Payment.created_at <= end_date)
 
         return query.offset(skip).limit(limit).all()
 
@@ -128,15 +129,15 @@ class PaymentService:
         from sqlalchemy import func
 
         stats = db.query(
-            func.count(models.Payment.id).label('total_payments'),
-            func.sum(models.Payment.amount).label('total_amount'),
-            func.avg(models.Payment.amount).label('avg_amount')
+            func.count(Payment.id).label('total_payments'),
+            func.sum(Payment.amount).label('total_amount'),
+            func.avg(Payment.amount).label('avg_amount')
         ).first()
 
         status_counts = db.query(
-            models.Payment.status,
-            func.count(models.Payment.id).label('count')
-        ).group_by(models.Payment.status).all()
+            Payment.status,
+            func.count(Payment.id).label('count')
+        ).group_by(Payment.status).all()
 
         return {
             'total_payments': stats.total_payments or 0,

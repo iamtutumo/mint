@@ -3,24 +3,24 @@ from app.db.base import Base
 from app.db.session import engine, SessionLocal
 from app.core.logging import setup_logging
 
+# Import all models in dependency order to ensure proper SQLAlchemy registration
+from models.product import Product
+from models.user import User
+from models.order import Order
+from models.order_item import OrderItem
+from models.account import Account
+from models.document import Document
+from models.survey import Survey
+from models.booking import Booking
+from models.inventory import InventoryMovement
+from models.transaction import Transaction
+from models.payment import Payment
+from models.state_transition import OrderStateTransition
+
 logger = setup_logging()
 
 async def init_db() -> None:
     try:
-        # Import all models so SQLAlchemy mappers are registered before metadata operations
-        from app.models import user
-        from app.models import product
-        from app.models import order
-        from app.models import order_item
-        from app.models import payment
-        from app.models import survey
-        from app.models import booking
-        from app.models import inventory
-        from app.models import account
-        from app.models import transaction
-        from app.models import document
-        from app.models import state_transition
-
         Base.metadata.create_all(bind=engine)
         logger.info("Database tables created successfully")
         
@@ -37,7 +37,7 @@ async def init_db() -> None:
         raise
 
 async def create_default_accounts(db: Session):
-    import models.account
+    from app.models.account import Account
     
     default_accounts = [
         {"code": "1000", "name": "Cash", "account_type": "asset", "parent_id": None},
@@ -52,9 +52,9 @@ async def create_default_accounts(db: Session):
     
     try:
         for acc in default_accounts:
-            existing = db.query(models.account.Account).filter(models.account.Account.code == acc["code"]).first()
+            existing = db.query(Account).filter(Account.code == acc["code"]).first()
             if not existing:
-                account = models.account.Account(**acc)
+                account = Account(**acc)
                 db.add(account)
         db.commit()
         logger.info("Default accounts created")
@@ -64,7 +64,7 @@ async def create_default_accounts(db: Session):
         Base.metadata.create_all(bind=engine)
         db.rollback()
         for acc in default_accounts:
-            account = models.account.Account(**acc)
+            account = Account(**acc)
             db.add(account)
         db.commit()
         logger.info("Default accounts created (fallback)")

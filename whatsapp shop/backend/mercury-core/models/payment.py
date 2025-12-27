@@ -17,7 +17,6 @@ class PaymentMethod(str, enum.Enum):
     CARD = "card"
 
 class Payment(BaseModel):
-    __table_args__ = {'extend_existing': True}
     __tablename__ = "payments"
     
     
@@ -34,4 +33,4 @@ class Payment(BaseModel):
     notes = Column(Text)
     
     # Relationships
-    order = relationship("Order", back_populates="payments")
+    # order = relationship("models.order.Order", back_populates="payments")  # Commented out to avoid dependency issue

@@ -5,14 +5,13 @@ import enum
 from app.db.base import BaseModel
 
 class MovementType(str, enum.Enum):
-    PURCHASE = "purchase"
-    SALE = "sale"
+    INBOUND = "inbound"
+    OUTBOUND = "outbound"
     ADJUSTMENT = "adjustment"
     RETURN = "return"
     DAMAGE = "damage"
 
 class InventoryMovement(BaseModel):
-    __table_args__ = {'extend_existing': True}
     __tablename__ = "inventory_movements"
     
     
@@ -25,4 +24,4 @@ class InventoryMovement(BaseModel):
     performed_by = Column(String(20))
     
     # Relationships
-    product = relationship("product.Product", back_populates="inventory_movements")
+    # product = relationship("models.product.Product", back_populates="inventory_movements")  # Commented out to avoid dependency issue

@@ -11,8 +11,8 @@ class ProductType(str, enum.Enum):
     SERVICE = "service"
 
 class Product(BaseModel):
-    __table_args__ = {'extend_existing': True}
     __tablename__ = "products"
+    __table_args__ = {'extend_existing': True}
     
     
     name = Column(String(200), nullable=False, index=True)
@@ -55,6 +55,6 @@ class Product(BaseModel):
     image_url = Column(String(500))
     
     # Relationships
-    order_items = relationship("OrderItem", back_populates="product")
-    inventory_movements = relationship("InventoryMovement", back_populates="product")
+    # order_items = relationship("models.order_item.OrderItem", back_populates="product")  # Commented out to avoid circular dependency
+    # inventory_movements = relationship("models.inventory.InventoryMovement", back_populates="product")  # Commented out to avoid dependency issue
     

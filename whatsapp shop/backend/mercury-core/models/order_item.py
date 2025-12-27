@@ -4,7 +4,6 @@ from sqlalchemy.orm import relationship
 from app.db.base import BaseModel
 
 class OrderItem(BaseModel):
-    __table_args__ = {'extend_existing': True}
     __tablename__ = "order_items"
     
     
@@ -25,5 +24,5 @@ class OrderItem(BaseModel):
     metadata_json = Column(JSON, default=dict)
     
     # Relationships
-    order = relationship("Order", back_populates="items")
-    product = relationship("Product", back_populates="order_items")
+    # order = relationship("models.order.Order", back_populates="items")  # Commented out to avoid dependency issue
+    # product = relationship("models.product.Product", back_populates="order_items")  # Commented out to avoid circular dependency

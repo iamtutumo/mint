@@ -4,7 +4,6 @@ from sqlalchemy.orm import relationship
 from app.db.base import BaseModel
 
 class OrderStateTransition(BaseModel):
-    __table_args__ = {'extend_existing': True}
     __tablename__ = "order_state_transitions"
     
     
@@ -15,4 +14,4 @@ class OrderStateTransition(BaseModel):
     performed_by = Column(String(20))
     
     # Relationships
-    order = relationship("Order", back_populates="state_transitions")
+    # order = relationship("models.order.Order", back_populates="state_transitions")  # Commented out to avoid dependency issue

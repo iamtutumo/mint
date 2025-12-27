@@ -7,6 +7,21 @@ from app.core.logging import setup_logging
 from app.db.init import init_db
 from api.api_router import api_router
 
+# Import all models early to ensure they are registered with SQLAlchemy
+# Models are now imported in db/init.py
+# from models.product import Product
+# from models.user import User
+# from models.account import Account
+# from models.document import Document
+# from models.order import Order
+# from models.survey import Survey
+# from models.booking import Booking
+# from models.inventory import InventoryMovement
+# from models.transaction import Transaction
+# from models.order_item import OrderItem
+# from models.payment import Payment
+# from models.state_transition import OrderStateTransition
+
 logger = setup_logging()
 
 @asynccontextmanager

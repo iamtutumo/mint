@@ -13,7 +13,6 @@ class DocumentType(str, enum.Enum):
     FINANCIAL_REPORT = "financial_report"
 
 class Document(BaseModel):
-    __table_args__ = {'extend_existing': True}
     __tablename__ = "documents"
     
     
@@ -33,5 +32,5 @@ class Document(BaseModel):
     customer_id = Column(Integer, ForeignKey("users.id"))
     
     # Relationships
-    order = relationship("Order")
-    customer = relationship("User")
+    order = relationship("models.order.Order")
+    customer = relationship("models.user.User")

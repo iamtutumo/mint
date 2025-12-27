@@ -4,7 +4,6 @@ from sqlalchemy.orm import relationship
 from app.db.base import BaseModel
 
 class Survey(BaseModel):
-    __table_args__ = {'extend_existing': True}
     __tablename__ = "surveys"
     
     
@@ -16,5 +15,5 @@ class Survey(BaseModel):
     responses = Column(JSON, default=dict)
     
     # Relationships
-    order = relationship("Order")
-    customer = relationship("User", back_populates="surveys")
+    order = relationship("models.order.Order")
+    # customer = relationship("models.user.User", back_populates="surveys")  # Commented out to avoid dependency issue

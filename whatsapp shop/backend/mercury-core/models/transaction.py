@@ -10,8 +10,8 @@ class TransactionType(str, enum.Enum):
     CREDIT = "credit"
 
 class Transaction(BaseModel):
-    __table_args__ = {'extend_existing': True}
     __tablename__ = "transactions"
+    __table_args__ = {'extend_existing': True}
     
     
     journal_entry_id = Column(String(50), index=True, nullable=False)

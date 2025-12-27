@@ -22,8 +22,8 @@ class OrderSource(str, enum.Enum):
     MANUAL = "manual"
 
 class Order(BaseModel):
-    __table_args__ = {'extend_existing': True}
     __tablename__ = "orders"
+    __table_args__ = {'extend_existing': True}
     
     
     order_number = Column(String(50), unique=True, index=True, nullable=False)
@@ -58,7 +58,7 @@ class Order(BaseModel):
     metadata_json = Column(JSON, default=dict)
     
     # Relationships
-    customer = relationship("User", back_populates="orders")
-    items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
-    payments = relationship("Payment", back_populates="order")
-    state_transitions = relationship("OrderStateTransition", back_populates="order")
+    # customer = relationship("models.user.User", back_populates="orders")  # Commented out to avoid dependency issue
+    # items = relationship("models.order_item.OrderItem", back_populates="order", cascade="all, delete-orphan")  # Commented out to avoid dependency issue
+    # payments = relationship("models.payment.Payment", back_populates="order")  # Commented out to avoid dependency issue
+    # state_transitions = relationship("models.state_transition.OrderStateTransition", back_populates="order")  # Commented out to avoid dependency issue

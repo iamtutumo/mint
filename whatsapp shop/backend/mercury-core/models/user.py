@@ -10,8 +10,8 @@ class UserRole(str, enum.Enum):
     STAFF = "staff"
 
 class User(BaseModel):
-    __table_args__ = {'extend_existing': True}
     __tablename__ = "users"
+    __table_args__ = {'extend_existing': True}
     
     
     phone_number = Column(String(20), unique=True, index=True, nullable=False)
@@ -24,9 +24,9 @@ class User(BaseModel):
     whatsapp_verified = Column(Boolean, default=False)
     
     # Relationships
-    orders = relationship("order.Order", back_populates="customer")
-    bookings = relationship("booking.Booking", back_populates="customer")
-    surveys = relationship("survey.Survey", back_populates="customer")
+    # orders = relationship("models.order.Order", back_populates="customer")  # Commented out to avoid dependency issue
+    # bookings = relationship("models.booking.Booking", back_populates="customer")  # Commented out to avoid dependency issue
+    # surveys = relationship("models.survey.Survey", back_populates="customer")  # Commented out to avoid dependency issue
 
 
 # Pydantic models used by auth endpoints

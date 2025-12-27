@@ -6,7 +6,7 @@ from fastapi import HTTPException, status
 from ..models.order import Order, OrderStatus
 from ..models.order_item import OrderItem
 from ..models.product import Product, ProductType
-from ..models.inventory import InventoryTransaction, TransactionType
+from ..models.inventory import InventoryMovement, MovementType
 from ..schemas.order import OrderCreate, OrderUpdate, OrderStatusUpdate
 from ..schemas.order_item import OrderItemCreate, OrderItemType
 from ..core.security import get_current_user
@@ -174,12 +174,12 @@ class OrderService:
     ) -> None:
         """Update inventory and create transaction record"""
         # Create inventory transaction
-        transaction = InventoryTransaction(
+        transaction = InventoryMovement(
             product_id=product_id,
             quantity=quantity,
-            transaction_type=(
-                TransactionType.INBOUND if quantity > 0 
-                else TransactionType.OUTBOUND
+            movement_type=(
+                MovementType.INBOUND if quantity > 0 
+                else MovementType.OUTBOUND
             ),
             reference_id=reference_id,
             reference_type=reference_type,

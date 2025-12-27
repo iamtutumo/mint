@@ -1,119 +1,96 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import List, Optional
-from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 from datetime import datetime
+
+from app.db.session import get_db
+from models.product import Product, ProductType
+from schemas.product import ProductCreate, ProductUpdate, Product as ProductSchema
+from services.product import ProductService
 
 router = APIRouter(prefix="/products", tags=["products"])
 
-# Pydantic models for request/response
-class ProductBase(BaseModel):
-    name: str
-    description: Optional[str] = None
-    price: float = Field(..., gt=0, description="Price must be greater than zero")
-    sku: Optional[str] = None
-    barcode: Optional[str] = None
-    category: Optional[str] = None
-    is_active: bool = True
-    inventory_quantity: int = 0
-    reorder_level: Optional[int] = None
-
-class ProductCreate(ProductBase):
-    pass
-
-class ProductUpdate(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
-    price: Optional[float] = Field(None, gt=0)
-    sku: Optional[str] = None
-    barcode: Optional[str] = None
-    category: Optional[str] = None
-    is_active: Optional[bool] = None
-    inventory_quantity: Optional[int] = None
-    reorder_level: Optional[int] = None
-
-class ProductResponse(ProductBase):
-    id: int
-    created_at: datetime
-    updated_at: datetime
-
-    class Config:
-        orm_mode = True
-
-# Mock database
-products_db = {}
-product_id_counter = 1
-
-@router.post("/", response_model=ProductResponse, status_code=status.HTTP_201_CREATED)
-async def create_product(product: ProductCreate):
-    global product_id_counter
-    
-    # In a real app, this would be a database operation
-    product_dict = product.dict()
-    product_dict["id"] = product_id_counter
-    product_dict["created_at"] = datetime.utcnow()
-    product_dict["updated_at"] = datetime.utcnow()
-    
-    products_db[product_id_counter] = product_dict
-    product_id_counter += 1
-    
-    return product_dict
-
-@router.get("/", response_model=List[ProductResponse])
-async def list_products(
-    skip: int = 0,
-    limit: int = 100,
-    category: Optional[str] = None,
-    min_price: Optional[float] = None,
-    max_price: Optional[float] = None,
-    in_stock: Optional[bool] = None
+@router.post("/", response_model=ProductSchema, status_code=status.HTTP_201_CREATED)
+async def create_product(
+    product: ProductCreate,
+    db: Session = Depends(get_db)
 ):
-    # In a real app, this would be a database query with filters
-    filtered_products = list(products_db.values())
-    
-    if category:
-        filtered_products = [p for p in filtered_products if p.get("category") == category]
-    if min_price is not None:
-        filtered_products = [p for p in filtered_products if p["price"] >= min_price]
-    if max_price is not None:
-        filtered_products = [p for p in filtered_products if p["price"] <= max_price]
-    if in_stock is not None:
-        if in_stock:
-            filtered_products = [p for p in filtered_products if p["inventory_quantity"] > 0]
-        else:
-            filtered_products = [p for p in filtered_products if p["inventory_quantity"] <= 0]
-    
-    return filtered_products[skip : skip + limit]
+    """Create a new product"""
+    try:
+        db_product = ProductService.create_product(
+            db=db,
+            name=product.name,
+            product_type=product.product_type,
+            selling_price=product.price,
+            description=product.description,
+            category=product.category,
+            sku=product.sku,
+            stock_quantity=0  # default
+        )
+        return ProductSchema.from_orm(db_product)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create product: {str(e)}")
 
-@router.get("/{product_id}", response_model=ProductResponse)
-async def get_product(product_id: int):
-    if product_id not in products_db:
-        raise HTTPException(status_code=404, detail="Product not found")
-    return products_db[product_id]
+@router.get("/", response_model=List[ProductSchema])
+async def list_products(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    category: Optional[str] = None,
+    product_type: Optional[ProductType] = None,
+    db: Session = Depends(get_db)
+):
+    """List products with optional filters"""
+    try:
+        products = ProductService.list_products(
+            db=db,
+            category=category,
+            product_type=product_type,
+            skip=skip,
+            limit=limit
+        )
+        return [ProductSchema.from_orm(product) for product in products]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list products: {str(e)}")
 
-@router.put("/{product_id}", response_model=ProductResponse)
-async def update_product(product_id: int, product: ProductUpdate):
-    if product_id not in products_db:
-        raise HTTPException(status_code=404, detail="Product not found")
-    
-    # In a real app, this would be a database operation
-    stored_product = products_db[product_id]
-    update_data = product.dict(exclude_unset=True)
-    
-    # Update only the fields that were provided
-    for field, value in update_data.items():
-        if value is not None:
-            stored_product[field] = value
-    
-    stored_product["updated_at"] = datetime.utcnow()
-    
-    return stored_product
+@router.get("/{product_id}", response_model=ProductSchema)
+async def get_product(product_id: int, db: Session = Depends(get_db)):
+    """Get product by ID"""
+    try:
+        product = ProductService.get_product(db, product_id)
+        if not product:
+            raise HTTPException(status_code=404, detail="Product not found")
+        return ProductSchema.from_orm(product)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get product: {str(e)}")
+
+@router.put("/{product_id}", response_model=ProductSchema)
+async def update_product(product_id: int, product: ProductUpdate, db: Session = Depends(get_db)):
+    """Update product"""
+    try:
+        update_data = product.dict(exclude_unset=True)
+        if 'price' in update_data:
+            update_data['selling_price'] = update_data.pop('price')
+        db_product = ProductService.update_product(db, product_id, **update_data)
+        if not db_product:
+            raise HTTPException(status_code=404, detail="Product not found")
+        return ProductSchema.from_orm(db_product)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update product: {str(e)}")
 
 @router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_product(product_id: int):
-    if product_id not in products_db:
-        raise HTTPException(status_code=404, detail="Product not found")
-    
-    # In a real app, this would be a database operation
-    del products_db[product_id]
-    
-    return {"ok": True}
+async def delete_product(product_id: int, db: Session = Depends(get_db)):
+    """Deactivate product"""
+    try:
+        success = ProductService.deactivate_product(db, product_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Product not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete product: {str(e)}")

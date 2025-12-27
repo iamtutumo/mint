@@ -57,7 +57,7 @@ class PhysicalProductCreate(ProductBase):
     depth_cm: Optional[float] = Field(None, gt=0)
 
 class Product(ProductBase):
-    id: str
+    id: int
     created_at: datetime
     updated_at: datetime
     

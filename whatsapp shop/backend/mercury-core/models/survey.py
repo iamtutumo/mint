@@ -5,6 +5,7 @@ from app.db.base import BaseModel
 
 class Survey(BaseModel):
     __tablename__ = "surveys"
+    __table_args__ = {'extend_existing': True}
     
     
     order_id = Column(Integer, ForeignKey("orders.id"), nullable=False)

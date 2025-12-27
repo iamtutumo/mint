@@ -5,6 +5,7 @@ from app.db.base import BaseModel
 
 class OrderItem(BaseModel):
     __tablename__ = "order_items"
+    __table_args__ = {'extend_existing': True}
     
     
     order_id = Column(Integer, ForeignKey("orders.id"), nullable=False)

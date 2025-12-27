@@ -18,6 +18,7 @@ class PaymentMethod(str, enum.Enum):
 
 class Payment(BaseModel):
     __tablename__ = "payments"
+    __table_args__ = {'extend_existing': True}
     
     
     order_id = Column(Integer, ForeignKey("orders.id"), nullable=False)

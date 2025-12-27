@@ -1,7 +1,7 @@
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, Depends
 
 from ..models.order import Order, OrderStatus
 from ..models.order_item import OrderItem
@@ -9,9 +9,11 @@ from ..models.product import Product, ProductType
 from ..models.inventory import InventoryMovement, MovementType
 from ..schemas.order import OrderCreate, OrderUpdate, OrderStatusUpdate
 from ..schemas.order_item import OrderItemCreate, OrderItemType
-from ..core.security import get_current_user
+from ..core.auth import get_current_user
 from ..db.session import SessionLocal
-from ..utils.logger import logger
+from ..core.logging import setup_logging
+
+logger = setup_logging()
 
 class OrderService:
     def __init__(self, db: Session):

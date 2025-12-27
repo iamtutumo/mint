@@ -14,6 +14,7 @@ class DocumentType(str, enum.Enum):
 
 class Document(BaseModel):
     __tablename__ = "documents"
+    __table_args__ = {'extend_existing': True}
     
     
     document_number = Column(String(50), unique=True, index=True, nullable=False)

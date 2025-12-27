@@ -13,6 +13,7 @@ class MovementType(str, enum.Enum):
 
 class InventoryMovement(BaseModel):
     __tablename__ = "inventory_movements"
+    __table_args__ = {'extend_existing': True}
     
     
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)

@@ -4,8 +4,8 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.utils.llm_parser import LLMCommandParser
 from app.services.order_service import OrderService
-from app.services.accounting_service import AccountingService
-from app.services.inventory_service import InventoryService
+from app.services.accounting import AccountingService
+from app.services.inventory import InventoryService
 from app.core.security import SecurityManager
 from app.core.logging import setup_logging
 

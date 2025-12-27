@@ -3,20 +3,6 @@ from app.db.base import Base
 from app.db.session import engine, SessionLocal
 from app.core.logging import setup_logging
 
-# Import all models in dependency order to ensure proper SQLAlchemy registration
-from models.product import Product
-from models.user import User
-from models.order import Order
-from models.order_item import OrderItem
-from models.account import Account
-from models.document import Document
-from models.survey import Survey
-from models.booking import Booking
-from models.inventory import InventoryMovement
-from models.transaction import Transaction
-from models.payment import Payment
-from models.state_transition import OrderStateTransition
-
 logger = setup_logging()
 
 async def init_db() -> None:

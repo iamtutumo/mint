@@ -46,3 +46,7 @@ class OrderResponse(BaseModel):
 class OrderStatusUpdate(BaseModel):
     new_status: OrderStatus
     reason: Optional[str] = None
+
+class OrderUpdate(BaseModel):
+    delivery_address: Optional[str] = None
+    # Add other updatable fields as needed
